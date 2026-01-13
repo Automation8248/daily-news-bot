@@ -12,9 +12,6 @@ REFRESH_TOKEN = os.getenv("GOOGLE_REFRESH_TOKEN")
 BLOGGER_ID = os.getenv("BLOGGER_BLOG_ID")
 HF_TOKEN = os.getenv("HF_TOKEN")
 
-# Setup Official Client (Zephyr Model)
-client = InferenceClient(model="HuggingFaceH4/zephyr-7b-beta", token=HF_TOKEN)
-
 def get_blogger_service():
     creds = Credentials(
         None,
@@ -34,33 +31,37 @@ def get_trending_topic():
     ]
     return random.choice(topics)
 
-# --- 2. AI CONTENT GENERATION (CHAT MODE) ---
+# --- 2. AI CONTENT GENERATION (MULTI-MODEL SUPPORT) ---
 def generate_blog_post(topic):
     print(f"Generating content for: {topic}...")
     
-    # Message format for Chat Models
-    messages = [
-        {"role": "system", "content": "You are a professional blogger who writes engaging viral content."},
-        {"role": "user", "content": f"Write a 400-word blog post about '{topic}'. Format strictly using HTML tags (<h2> for headings, <p> for paragraphs). Do NOT use <html> or <body> tags."}
+    # Ye list hai backup models ki. Agar ek fail hua to dusra chalega.
+    models_to_try = [
+        "mistralai/Mistral-7B-Instruct-v0.3",
+        "microsoft/Phi-3.5-mini-instruct",
+        "Qwen/Qwen2.5-72B-Instruct"
     ]
     
-    # Retry Logic
-    for i in range(3):
+    messages = [
+        {"role": "system", "content": "You are a professional blogger."},
+        {"role": "user", "content": f"Write a 400-word engaging blog post about '{topic}'. Format strictly using HTML tags (<h2> for headings, <p> for paragraphs). Do NOT use <html> or <body> tags."}
+    ]
+    
+    for model in models_to_try:
+        print(f"Trying model: {model}...")
         try:
-            # CHANGE: text_generation ki jagah chat_completion use kar rahe hain
+            client = InferenceClient(model=model, token=HF_TOKEN)
             response = client.chat_completion(
                 messages, 
                 max_tokens=800,
                 temperature=0.7
             )
-            # Response se text nikalna
             return response.choices[0].message.content
-            
         except Exception as e:
-            print(f"Attempt {i+1} failed: {e}")
-            time.sleep(5)
+            print(f"Model {model} failed: {e}")
+            time.sleep(2) # Thoda ruk kar next model try karo
             
-    return "Error: AI content could not be generated."
+    return "Error: All AI models failed."
 
 # --- 3. POSTING TO BLOGGER ---
 def get_image_url(topic):
