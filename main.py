@@ -22,55 +22,62 @@ def get_blogger_service():
     )
     return build('blogger', 'v3', credentials=creds)
 
+# --- STRICT TECH & AI TOPICS ---
 def get_trending_topic():
+    # Sirf Tech aur AI topics rakhe gaye hain
     topics = [
-        "Future of AI 2026", "SpaceX Starship Updates", 
-        "Electric Vehicles Revolution", "Wildlife Conservation", 
-        "Virtual Reality Trends", "Ocean Conservation",
-        "Solar Energy Innovations", "Robotics Updates"
+        "Future of Generative AI 2026", 
+        "Nvidia New AI Chip Review", 
+        "OpenAI Sora Video Tools", 
+        "Humane AI Pin Features", 
+        "Python Automation Tricks", 
+        "Latest Android 16 Updates",
+        "Quantum Computing Progress", 
+        "Tesla Optimus Robot News"
     ]
     return random.choice(topics)
 
-# --- 2. AI CONTENT GENERATION ---
+# --- 2. AI CONTENT GENERATION (HUMANIZED) ---
 def generate_blog_post(topic):
-    print(f"Generating content for: {topic}...")
+    print(f"Generating humanized content for: {topic}...")
     
-    # Backup Models List
     models_to_try = [
         "mistralai/Mistral-7B-Instruct-v0.3",
         "microsoft/Phi-3.5-mini-instruct",
         "Qwen/Qwen2.5-72B-Instruct"
     ]
     
-    # Prompt mein hum AI ko bol rahe hain ki structure kaisa rakhna hai
+    # Humanize Prompt: "Perplexity" aur "Burstiness" badhane ke instructions
     prompt = f"""
-    You are a professional blogger. Write a detailed blog post about '{topic}'.
+    Act as a senior Tech Journalist. Write a blog post about '{topic}'.
     
-    Follow this structure STRICTLY:
-    1. Start with one engaging Intro Paragraph (<p style="font-family: Georgia, serif; font-size: 18px;">).
-    2. Write '[IMG1]' exactly here.
-    3. Then write 8 to 9 distinct Subheadings using <h3> tags.
-    4. Under each subheading, write a detailed paragraph using <p style="font-family: Verdana, sans-serif;"> tags.
-    5. Insert '[IMG2]' somewhere in the middle (after 3rd subheading).
-    6. Insert '[IMG3]' near the end (after 7th subheading).
+    IMPORTANT INSTRUCTIONS FOR HUMAN-LIKE WRITING:
+    - Use a conversational, engaging tone (use "we", "I", rhetorical questions).
+    - Avoid robotic transitions like "In conclusion", "Moreover", "Furthermore".
+    - Keep sentences varied in length to increase burstiness.
+    - Focus on real-world application and personal opinion.
     
-    DO NOT output the Main Title (H1). Start directly with the intro paragraph.
+    STRUCTURE REQUIREMENTS:
+    1. First line: Write a Title that is EXACTLY between 50 and 55 characters. No more, no less.
+    2. Second line: Write "|||" (This is a separator).
+    3. Third line onwards: The HTML Body.
+       - Start with a strong Intro Paragraph (<p style="font-family: Georgia, serif; font-size: 18px;">).
+       - Write '[IMG1]' placeholder.
+       - Add 6-8 Subheadings (<h3>) with detailed, non-repetitive paragraphs (<p style="font-family: Verdana, sans-serif;">).
+       - Insert '[IMG2]' after the 3rd subheading.
+       - Insert '[IMG3]' near the end.
+       - DO NOT output <html>, <head>, or <body> tags.
     """
     
     messages = [
-        {"role": "system", "content": "You are a helpful assistant that writes HTML formatted blog posts."},
+        {"role": "system", "content": "You are a tech blogger who writes human-like content."},
         {"role": "user", "content": prompt}
     ]
     
     for model in models_to_try:
-        print(f"Trying model: {model}...")
         try:
             client = InferenceClient(model=model, token=HF_TOKEN)
-            response = client.chat_completion(
-                messages, 
-                max_tokens=1500, # Word count badha diya hai
-                temperature=0.7
-            )
+            response = client.chat_completion(messages, max_tokens=1800, temperature=0.8)
             return response.choices[0].message.content
         except Exception as e:
             print(f"Model {model} failed: {e}")
@@ -80,58 +87,79 @@ def generate_blog_post(topic):
 
 # --- 3. IMAGES & POSTING ---
 def get_image_urls(topic):
-    # 3 Alag-alag images generate karenge
     safe_topic = topic.replace(" ", "%20")
     base_url = "https://image.pollinations.ai/prompt"
-    
-    img1 = f"{base_url}/cinematic%20photo%20of%20{safe_topic}%20overview%204k?width=800&height=450&nologo=true&seed={random.randint(1,1000)}"
-    img2 = f"{base_url}/detailed%20closeup%20of%20{safe_topic}%20technology?width=800&height=450&nologo=true&seed={random.randint(1,1000)}"
-    img3 = f"{base_url}/futuristic%20view%20of%20{safe_topic}?width=800&height=450&nologo=true&seed={random.randint(1,1000)}"
-    
+    # Tech style images
+    img1 = f"{base_url}/futuristic%20tech%20{safe_topic}%20cyberpunk?width=800&height=450&nologo=true&seed={random.randint(1,1000)}"
+    img2 = f"{base_url}/detailed%20circuit%20ai%20{safe_topic}?width=800&height=450&nologo=true&seed={random.randint(1,1000)}"
+    img3 = f"{base_url}/human%20using%20technology%20{safe_topic}?width=800&height=450&nologo=true&seed={random.randint(1,1000)}"
     return [img1, img2, img3]
 
 def post_to_blogger():
     topic = get_trending_topic()
     
-    # 1. Content Generate karo
-    content_html = generate_blog_post(topic)
+    full_response = generate_blog_post(topic)
     
-    if "Error:" in content_html:
-        print("Skipping post due to AI error.")
+    if "Error:" in full_response or "|||" not in full_response:
+        print("Skipping due to formatting error.")
         return
 
-    # 2. Images Generate karo
+    # --- LOGIC TO SEPARATE TITLE AND BODY ---
+    try:
+        parts = full_response.split("|||")
+        raw_title = parts[0].strip().replace('"', '').replace("Title:", "")
+        content_html = parts[1].strip()
+    except:
+        raw_title = topic
+        content_html = full_response
+
+    # --- LOGIC: 55 CHARACTER LIMIT ---
+    # Hum title ko check karenge. Agar 55 se zyada hai to cut karenge.
+    final_title = raw_title
+    if len(final_title) > 55:
+        # 55 chars par cut karo, lekin word ke beech mein mat kato
+        shortened = final_title[:55]
+        # Last space dhoondo taaki word complete ho
+        last_space = shortened.rfind(' ')
+        if last_space != -1:
+            final_title = shortened[:last_space]
+        else:
+            final_title = shortened # Agar space nahi mila to hard cut
+
+    # Agar title bahut chhota hai (fail case), to topic use karo
+    if len(final_title) < 10:
+        final_title = f"{topic}: The New AI Era"
+
+    print(f"Original Title Length: {len(raw_title)}")
+    print(f"Final Title (Optimized): {final_title} (Len: {len(final_title)})")
+
+    # Images Lagana
     images = get_image_urls(topic)
-    
-    # 3. Content mein Images fit karo (Replace placeholders)
-    # Image style add kiya hai taaki wo center aur sundar dikhe
-    img_style = 'style="width:100%; border-radius:10px; margin: 20px 0;"'
+    img_style = 'style="width:100%; border-radius:10px; margin: 20px 0; box-shadow: 0 4px 8px rgba(0,0,0,0.1);"'
     
     content_html = content_html.replace('[IMG1]', f'<img src="{images[0]}" {img_style}><br>')
     content_html = content_html.replace('[IMG2]', f'<img src="{images[1]}" {img_style}><br>')
     content_html = content_html.replace('[IMG3]', f'<img src="{images[2]}" {img_style}><br>')
     
-    # 4. Final HTML Structure Assemble karo
-    # Sabse upar Heading (H1), fir AI ka content (jisme Intro > Img > Subheadings hain)
+    # Blogger Body
     final_body = f"""
-    <h1 style="text-align: center; color: #333;">{topic}</h1>
-    <hr>
+    <h1 style="text-align: center; font-family: 'Helvetica Neue', sans-serif; color: #2c3e50;">{final_title}</h1>
+    <hr style="border: 0; height: 1px; background: #333; background-image: linear-gradient(to right, #ccc, #333, #ccc);">
     {content_html}
+    <br>
+    <p style="text-align:center; font-size:12px; color: #888;"><i>Generated by TechBot AI</i></p>
     """
-    
-    # 5. Title (Sirf Topic ka naam, koi "Latest News" nahi)
-    clean_title = topic
     
     service = get_blogger_service()
     body = {
         "kind": "blogger#post",
         "blog": {"id": BLOGGER_ID},
-        "title": clean_title,
+        "title": final_title, # Yahan 55 char limit wala title jayega
         "content": final_body
     }
     
     service.posts().insert(blogId=BLOGGER_ID, body=body).execute()
-    print(f"Successfully posted: {clean_title}")
+    print(f"Successfully posted: {final_title}")
 
 if __name__ == "__main__":
     post_to_blogger()
