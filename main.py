@@ -13,7 +13,8 @@ HF_TOKEN = os.getenv("HF_TOKEN") # Hugging Face Token
 
 # Hugging Face API URL (Mistral 7B Model - Fast & Free)
 # Updated URL (Router wala)
-API_URL = "https://router.huggingface.co/mistralai/Mistral-7B-Instruct-v0.3"
+# Sahi URL (Models word add kiya hai aur stable model use kar rahe hain)
+API_URL = "https://router.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta"
 HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 def get_blogger_service():
