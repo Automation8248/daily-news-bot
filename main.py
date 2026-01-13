@@ -12,7 +12,8 @@ BLOGGER_ID = os.getenv("BLOGGER_BLOG_ID")
 HF_TOKEN = os.getenv("HF_TOKEN") # Hugging Face Token
 
 # Hugging Face API URL (Mistral 7B Model - Fast & Free)
-API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3"
+# Updated URL (Router wala)
+API_URL = "https://router.huggingface.co/mistralai/Mistral-7B-Instruct-v0.3"
 HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 def get_blogger_service():
