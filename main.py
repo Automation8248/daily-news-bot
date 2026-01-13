@@ -13,7 +13,8 @@ BLOGGER_ID = os.getenv("BLOGGER_BLOG_ID")
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 # FIX: Using Standard Inference URL for a reliable model (Zephyr)
-API_URL = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta"
+# Updated URL (Hugging Face ki demand ke hisaab se)
+API_URL = "https://router.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta"
 HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 def get_blogger_service():
