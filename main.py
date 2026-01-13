@@ -3,7 +3,7 @@ import random
 import time
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from gradio_client import Client # Aapka naya tool
+from gradio_client import Client
 
 # --- 1. CONFIGURATION ---
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
@@ -23,47 +23,43 @@ def get_blogger_service():
 
 def get_trending_topic():
     topics = [
-        "Artificial Intelligence Trends 2026", "SpaceX Starship Future", 
-        "Electric Vehicles Revolution", "Wildlife Conservation", 
-        "Latest VR Gadgets", "Ocean Cleanup Projects",
-        "Solar Energy Innovations", "Robotics in Daily Life"
+        "AI Technology 2026", "SpaceX Future Missions", 
+        "Electric Cars Updates", "Wildlife Conservation", 
+        "Virtual Reality Gadgets", "Ocean Cleanup News",
+        "Solar Energy Trends", "Robotics Innovations"
     ]
     return random.choice(topics)
 
-# --- 2. AI CONTENT (USING GRADIO CLIENT) ---
+# --- 2. AI CONTENT (FIXED API NAME) ---
 def generate_blog_post(topic):
     print(f"Connecting to MiniMax AI for topic: {topic}...")
     
     try:
-        # Aapka Diya Hua Client
         client = Client("ramuenugurthi/MiniMaxAI-MiniMax-M2")
         
         prompt = f"""
-        Write a 400-word engaging blog post about: '{topic}'.
-        Format strictly using HTML tags (<h2> for headings, <p> for paragraphs).
+        Write a 300-word engaging blog post about: '{topic}'.
+        Format using HTML tags (<h2> for headings, <p> for paragraphs).
         Do NOT use <html> or <body> tags.
-        Add a catchy title at the start.
         """
         
-        # 'predict' function call kar rahe hain. 
-        # Note: Aksar chat models ka API endpoint '/chat' ya '/predict' hota hai.
-        # Hum standard input bhej rahe hain.
+        # CHANGE: '/chat' ko hatakar '/predict' kiya hai
         result = client.predict(
             prompt, 
-            api_name="/chat" # Agar ye fail ho to '/predict' try karenge
+            api_name="/predict"
         )
         
-        # Result kabhi-kabhi tuple ya list mein aata hai, use string banayenge
+        # Result tuple ho sakta hai, isliye string mein convert kar rahe hain
         return str(result)
         
     except Exception as e:
         print(f"AI Generation Failed: {e}")
+        # Fallback: Agar ye fail ho to user ko error dikhaye
         return "Error: Could not generate content."
 
 # --- 3. POSTING ---
 def get_image_url(topic):
     safe_topic = topic.replace(" ", "%20")
-    # Pollinations AI for Image
     return f"https://image.pollinations.ai/prompt/cinematic%20photo%20of%20{safe_topic}%204k%20lighting?width=800&height=450&nologo=true"
 
 def post_to_blogger():
@@ -71,18 +67,14 @@ def post_to_blogger():
     
     content_html = generate_blog_post(topic)
     
-    # Agar error aaya to post mat karo
-    if "Error:" in content_html:
+    # Agar content "Error" se shuru ho raha hai to post mat karo
+    if content_html.startswith("Error"):
         print("Skipping post due to AI error.")
         return
 
     image_url = get_image_url(topic)
-    
-    # Blog post structure
-    final_content = f'<a href="{image_url}"><img src="{image_url}" style="width:100%; border-radius:10px;"></a><br><br>{content_html}'
-    
-    # Title nikalna (Simple tareeka)
     title = f"Latest Update: {topic}"
+    final_content = f'<a href="{image_url}"><img src="{image_url}" style="width:100%; border-radius:10px;"></a><br><br>{content_html}'
     
     service = get_blogger_service()
     body = {
