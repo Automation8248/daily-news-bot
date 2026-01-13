@@ -1,0 +1,32 @@
+name: Daily News Poster
+
+on:
+  schedule:
+    # Roz subah 9:00 AM aur shaam 6:00 PM (UTC time ke hisaab se adjust hota hai)
+    - cron: '30 3,12 * * *'
+  workflow_dispatch: # Button manual run ke liye
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install libraries
+        run: |
+          pip install google-auth google-auth-oauthlib google-api-python-client google-generativeai requests
+
+      - name: Run Auto Poster
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python main.py
