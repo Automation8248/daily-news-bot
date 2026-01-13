@@ -12,8 +12,7 @@ REFRESH_TOKEN = os.getenv("GOOGLE_REFRESH_TOKEN")
 BLOGGER_ID = os.getenv("BLOGGER_BLOG_ID")
 HF_TOKEN = os.getenv("HF_TOKEN")
 
-# Setup Official Client (Zephyr Model - Super Stable)
-# Ye model kabhi 'Not Found' nahi bolega
+# Setup Official Client (Zephyr Model)
 client = InferenceClient(model="HuggingFaceH4/zephyr-7b-beta", token=HF_TOKEN)
 
 def get_blogger_service():
@@ -35,29 +34,31 @@ def get_trending_topic():
     ]
     return random.choice(topics)
 
-# --- 2. AI CONTENT GENERATION ---
+# --- 2. AI CONTENT GENERATION (CHAT MODE) ---
 def generate_blog_post(topic):
     print(f"Generating content for: {topic}...")
     
-    prompt = f"""
-    You are a professional blogger. Write a 400-word blog post about '{topic}'.
-    Format strictly using HTML tags (<h2> for headings, <p> for paragraphs).
-    Do NOT use <html> or <body> tags.
-    Make the content engaging and viral.
-    """
+    # Message format for Chat Models
+    messages = [
+        {"role": "system", "content": "You are a professional blogger who writes engaging viral content."},
+        {"role": "user", "content": f"Write a 400-word blog post about '{topic}'. Format strictly using HTML tags (<h2> for headings, <p> for paragraphs). Do NOT use <html> or <body> tags."}
+    ]
     
-    # Retry Logic (Agar model busy ho to 3 baar try karega)
+    # Retry Logic
     for i in range(3):
         try:
-            response = client.text_generation(
-                prompt, 
-                max_new_tokens=600,
+            # CHANGE: text_generation ki jagah chat_completion use kar rahe hain
+            response = client.chat_completion(
+                messages, 
+                max_tokens=800,
                 temperature=0.7
             )
-            return response
+            # Response se text nikalna
+            return response.choices[0].message.content
+            
         except Exception as e:
             print(f"Attempt {i+1} failed: {e}")
-            time.sleep(5) # 5 second ruko
+            time.sleep(5)
             
     return "Error: AI content could not be generated."
 
