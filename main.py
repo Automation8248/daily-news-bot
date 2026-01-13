@@ -3,17 +3,13 @@ import random
 import time
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from huggingface_hub import InferenceClient # Official Tool
+from gradio_client import Client # Aapka naya tool
 
 # --- 1. CONFIGURATION ---
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 REFRESH_TOKEN = os.getenv("GOOGLE_REFRESH_TOKEN")
 BLOGGER_ID = os.getenv("BLOGGER_BLOG_ID")
-HF_TOKEN = os.getenv("HF_TOKEN")
-
-# Setup Hugging Face Client (Ye automatic URL handle karega)
-client = InferenceClient(token=HF_TOKEN)
 
 def get_blogger_service():
     creds = Credentials(
@@ -27,56 +23,66 @@ def get_blogger_service():
 
 def get_trending_topic():
     topics = [
-        "Future of AI 2026", "SpaceX Missions Update", 
-        "Electric Cars Revolution", "Wildlife Protection News", 
-        "Virtual Reality Trends", "Ocean Conservation",
-        "Solar Energy Innovations", "Robotics Updates"
+        "Artificial Intelligence Trends 2026", "SpaceX Starship Future", 
+        "Electric Vehicles Revolution", "Wildlife Conservation", 
+        "Latest VR Gadgets", "Ocean Cleanup Projects",
+        "Solar Energy Innovations", "Robotics in Daily Life"
     ]
     return random.choice(topics)
 
-# --- 2. AI CONTENT (USING OFFICIAL CLIENT) ---
+# --- 2. AI CONTENT (USING GRADIO CLIENT) ---
 def generate_blog_post(topic):
-    prompt = f"""
-    Write a 300-word engaging blog post about: '{topic}'.
-    Format using HTML tags (<h2> for headings, <p> for paragraphs).
-    Do NOT use <html> or <body> tags.
-    Add a catchy introduction and conclusion.
-    """
+    print(f"Connecting to MiniMax AI for topic: {topic}...")
     
-    # Retry Logic (3 baar koshish karega)
-    for i in range(3):
-        try:
-            # Mistral-7B Model use kar rahe hain
-            response = client.text_generation(
-                prompt, 
-                model="mistralai/Mistral-7B-Instruct-v0.3", 
-                max_new_tokens=600
-            )
-            return response
-        except Exception as e:
-            print(f"Attempt {i+1} failed: {e}")
-            time.sleep(5) # 5 second ruko
-            
-    return "Error: AI content could not be generated."
+    try:
+        # Aapka Diya Hua Client
+        client = Client("ramuenugurthi/MiniMaxAI-MiniMax-M2")
+        
+        prompt = f"""
+        Write a 400-word engaging blog post about: '{topic}'.
+        Format strictly using HTML tags (<h2> for headings, <p> for paragraphs).
+        Do NOT use <html> or <body> tags.
+        Add a catchy title at the start.
+        """
+        
+        # 'predict' function call kar rahe hain. 
+        # Note: Aksar chat models ka API endpoint '/chat' ya '/predict' hota hai.
+        # Hum standard input bhej rahe hain.
+        result = client.predict(
+            prompt, 
+            api_name="/chat" # Agar ye fail ho to '/predict' try karenge
+        )
+        
+        # Result kabhi-kabhi tuple ya list mein aata hai, use string banayenge
+        return str(result)
+        
+    except Exception as e:
+        print(f"AI Generation Failed: {e}")
+        return "Error: Could not generate content."
 
 # --- 3. POSTING ---
 def get_image_url(topic):
     safe_topic = topic.replace(" ", "%20")
+    # Pollinations AI for Image
     return f"https://image.pollinations.ai/prompt/cinematic%20photo%20of%20{safe_topic}%204k%20lighting?width=800&height=450&nologo=true"
 
 def post_to_blogger():
     topic = get_trending_topic()
-    print(f"Topic: {topic}")
     
     content_html = generate_blog_post(topic)
     
+    # Agar error aaya to post mat karo
     if "Error:" in content_html:
         print("Skipping post due to AI error.")
         return
 
     image_url = get_image_url(topic)
-    title = f"Latest Update: {topic}"
+    
+    # Blog post structure
     final_content = f'<a href="{image_url}"><img src="{image_url}" style="width:100%; border-radius:10px;"></a><br><br>{content_html}'
+    
+    # Title nikalna (Simple tareeka)
+    title = f"Latest Update: {topic}"
     
     service = get_blogger_service()
     body = {
