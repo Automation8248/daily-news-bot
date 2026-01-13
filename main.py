@@ -24,7 +24,6 @@ def get_blogger_service():
 
 # --- STRICT TECH & AI TOPICS ---
 def get_trending_topic():
-    # Sirf Tech aur AI topics rakhe gaye hain
     topics = [
         "Future of Generative AI 2026", 
         "Nvidia New AI Chip Review", 
@@ -47,30 +46,29 @@ def generate_blog_post(topic):
         "Qwen/Qwen2.5-72B-Instruct"
     ]
     
-    # Humanize Prompt: "Perplexity" aur "Burstiness" badhane ke instructions
+    # Prompt mein 'No Colons' ka strict instruction add kiya hai
     prompt = f"""
     Act as a senior Tech Journalist. Write a blog post about '{topic}'.
     
     IMPORTANT INSTRUCTIONS FOR HUMAN-LIKE WRITING:
     - Use a conversational, engaging tone (use "we", "I", rhetorical questions).
-    - Avoid robotic transitions like "In conclusion", "Moreover", "Furthermore".
+    - Avoid robotic transitions like "In conclusion", "Moreover".
     - Keep sentences varied in length to increase burstiness.
-    - Focus on real-world application and personal opinion.
     
     STRUCTURE REQUIREMENTS:
-    1. First line: Write a Title that is EXACTLY between 50 and 55 characters. No more, no less.
+    1. First line: Write a Simple Title (Max 55 chars). DO NOT use colons (:). Keep it direct.
     2. Second line: Write "|||" (This is a separator).
     3. Third line onwards: The HTML Body.
        - Start with a strong Intro Paragraph (<p style="font-family: Georgia, serif; font-size: 18px;">).
        - Write '[IMG1]' placeholder.
-       - Add 6-8 Subheadings (<h3>) with detailed, non-repetitive paragraphs (<p style="font-family: Verdana, sans-serif;">).
+       - Add 6-8 Subheadings (<h3>) with detailed paragraphs (<p style="font-family: Verdana, sans-serif;">).
        - Insert '[IMG2]' after the 3rd subheading.
        - Insert '[IMG3]' near the end.
        - DO NOT output <html>, <head>, or <body> tags.
     """
     
     messages = [
-        {"role": "system", "content": "You are a tech blogger who writes human-like content."},
+        {"role": "system", "content": "You are a tech blogger. Never use colons in titles."},
         {"role": "user", "content": prompt}
     ]
     
@@ -89,7 +87,6 @@ def generate_blog_post(topic):
 def get_image_urls(topic):
     safe_topic = topic.replace(" ", "%20")
     base_url = "https://image.pollinations.ai/prompt"
-    # Tech style images
     img1 = f"{base_url}/futuristic%20tech%20{safe_topic}%20cyberpunk?width=800&height=450&nologo=true&seed={random.randint(1,1000)}"
     img2 = f"{base_url}/detailed%20circuit%20ai%20{safe_topic}?width=800&height=450&nologo=true&seed={random.randint(1,1000)}"
     img3 = f"{base_url}/human%20using%20technology%20{safe_topic}?width=800&height=450&nologo=true&seed={random.randint(1,1000)}"
@@ -104,7 +101,7 @@ def post_to_blogger():
         print("Skipping due to formatting error.")
         return
 
-    # --- LOGIC TO SEPARATE TITLE AND BODY ---
+    # --- SEPARATE TITLE AND BODY ---
     try:
         parts = full_response.split("|||")
         raw_title = parts[0].strip().replace('"', '').replace("Title:", "")
@@ -113,25 +110,25 @@ def post_to_blogger():
         raw_title = topic
         content_html = full_response
 
-    # --- LOGIC: 55 CHARACTER LIMIT ---
-    # Hum title ko check karenge. Agar 55 se zyada hai to cut karenge.
-    final_title = raw_title
+    # --- LOGIC: REMOVE COLONS & LIMIT LENGTH ---
+    # 1. Colon (:) Hatao Logic
+    final_title = raw_title.replace(":", "")  # Colon ko delete kar dega
+    final_title = final_title.replace("  ", " ") # Double space ko single karega
+
+    # 2. 55 Character Logic
     if len(final_title) > 55:
-        # 55 chars par cut karo, lekin word ke beech mein mat kato
         shortened = final_title[:55]
-        # Last space dhoondo taaki word complete ho
         last_space = shortened.rfind(' ')
         if last_space != -1:
             final_title = shortened[:last_space]
         else:
-            final_title = shortened # Agar space nahi mila to hard cut
+            final_title = shortened
 
-    # Agar title bahut chhota hai (fail case), to topic use karo
     if len(final_title) < 10:
-        final_title = f"{topic}: The New AI Era"
+        final_title = f"{topic} Updates"
 
-    print(f"Original Title Length: {len(raw_title)}")
-    print(f"Final Title (Optimized): {final_title} (Len: {len(final_title)})")
+    print(f"Original Title: {raw_title}")
+    print(f"Cleaned Title (No Colon): {final_title}")
 
     # Images Lagana
     images = get_image_urls(topic)
@@ -154,7 +151,7 @@ def post_to_blogger():
     body = {
         "kind": "blogger#post",
         "blog": {"id": BLOGGER_ID},
-        "title": final_title, # Yahan 55 char limit wala title jayega
+        "title": final_title,
         "content": final_body
     }
     
