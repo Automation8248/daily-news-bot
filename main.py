@@ -14,7 +14,7 @@ BLOGGER_ID = os.getenv("BLOGGER_BLOG_ID")
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 
 genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel('gemini-pro')
+model = genai.GenerativeModel('gemini-1.5-flash')
 def get_blogger_service():
     creds = Credentials(
         None,
