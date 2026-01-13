@@ -1,9 +1,9 @@
 import os
-import time
 import random
-import requests
+import time
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from huggingface_hub import InferenceClient # Official Tool
 
 # --- 1. CONFIGURATION ---
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
@@ -12,10 +12,8 @@ REFRESH_TOKEN = os.getenv("GOOGLE_REFRESH_TOKEN")
 BLOGGER_ID = os.getenv("BLOGGER_BLOG_ID")
 HF_TOKEN = os.getenv("HF_TOKEN")
 
-# FIX: Using Standard Inference URL for a reliable model (Zephyr)
-# Updated URL (Hugging Face ki demand ke hisaab se)
-API_URL = "https://router.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta"
-HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"}
+# Setup Hugging Face Client (Ye automatic URL handle karega)
+client = InferenceClient(token=HF_TOKEN)
 
 def get_blogger_service():
     creds = Credentials(
@@ -29,45 +27,39 @@ def get_blogger_service():
 
 def get_trending_topic():
     topics = [
-        "Artificial Intelligence in 2026", "SpaceX Starship Updates", 
-        "Future of Electric Cars", "Save Tigers Campaign", 
-        "New VR Tech Gadgets", "Ocean Cleanup Success",
-        "Solar Energy Breakthroughs", "Robots in Daily Life"
+        "Future of AI 2026", "SpaceX Missions Update", 
+        "Electric Cars Revolution", "Wildlife Protection News", 
+        "Virtual Reality Trends", "Ocean Conservation",
+        "Solar Energy Innovations", "Robotics Updates"
     ]
     return random.choice(topics)
 
-# --- 2. AI CONTENT GENERATION (WITH RETRY) ---
-def query_huggingface(prompt):
-    payload = {
-        "inputs": prompt,
-        "parameters": {"max_new_tokens": 500, "return_full_text": False},
-        "options": {"wait_for_model": True} # FIX: Tells HF to wait if model is loading
-    }
-    
-    # Retry loop (3 koshish karega agar fail hua toh)
-    for i in range(3):
-        response = requests.post(API_URL, headers=HEADERS, json=payload)
-        if response.status_code == 200:
-            try:
-                return response.json()[0]['generated_text']
-            except:
-                return response.text
-        
-        print(f"Attempt {i+1} failed: {response.text}")
-        time.sleep(10) # 10 second ruk kar try karega
-        
-    return "Error: Could not generate content after 3 attempts."
-
+# --- 2. AI CONTENT (USING OFFICIAL CLIENT) ---
 def generate_blog_post(topic):
     prompt = f"""
     Write a 300-word engaging blog post about: '{topic}'.
     Format using HTML tags (<h2> for headings, <p> for paragraphs).
     Do NOT use <html> or <body> tags.
-    Make it exciting!
+    Add a catchy introduction and conclusion.
     """
-    return query_huggingface(prompt)
+    
+    # Retry Logic (3 baar koshish karega)
+    for i in range(3):
+        try:
+            # Mistral-7B Model use kar rahe hain
+            response = client.text_generation(
+                prompt, 
+                model="mistralai/Mistral-7B-Instruct-v0.3", 
+                max_new_tokens=600
+            )
+            return response
+        except Exception as e:
+            print(f"Attempt {i+1} failed: {e}")
+            time.sleep(5) # 5 second ruko
+            
+    return "Error: AI content could not be generated."
 
-# --- 3. IMAGE & POSTING ---
+# --- 3. POSTING ---
 def get_image_url(topic):
     safe_topic = topic.replace(" ", "%20")
     return f"https://image.pollinations.ai/prompt/cinematic%20photo%20of%20{safe_topic}%204k%20lighting?width=800&height=450&nologo=true"
@@ -78,13 +70,12 @@ def post_to_blogger():
     
     content_html = generate_blog_post(topic)
     
-    # Agar content fail hua toh post mat karo
     if "Error:" in content_html:
         print("Skipping post due to AI error.")
         return
 
     image_url = get_image_url(topic)
-    title = f"Must Read: {topic}"
+    title = f"Latest Update: {topic}"
     final_content = f'<a href="{image_url}"><img src="{image_url}" style="width:100%; border-radius:10px;"></a><br><br>{content_html}'
     
     service = get_blogger_service()
