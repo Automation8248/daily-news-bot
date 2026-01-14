@@ -122,29 +122,42 @@ def get_smart_labels(topic):
     if len(unique_labels) < 3: unique_labels.extend(["Digital Innovation", "Tech Updates"])
     return unique_labels[:5]
 
-# --- 2. AI CONTENT (HUMANIZED) ---
+# --- 2. AI CONTENT (HUMANIZED & SEO OPTIMIZED) ---
 def generate_blog_post(topic):
-    print(f"Generating content for: {topic}...")
+    print(f"Generating optimized content for: {topic}...")
     models = ["mistralai/Mistral-7B-Instruct-v0.3", "microsoft/Phi-3.5-mini-instruct", "Qwen/Qwen2.5-72B-Instruct"]
     
+    # Updated Prompt with SEO, FAQ, Conclusion and E-E-A-T
     prompt = f"""
     Write a humanized, senior tech journalist style blog post for category: '{topic}'.
-    RULES:
-    - TITLE: Direct, simple, NO colons (:), Max 55 chars.
-    - TONE: Conversational, personal, engaging (Use "We", "I"). No robotic filler.
-    - STRUCTURE: Title First Line -> '|||' -> Intro -> [IMG1] -> 8-9 Subheadings (<h3>) with stylish paragraphs -> [IMG2] (after 3rd H3) -> [IMG3] (near end).
-    - HTML: Use <p style="font-family: Georgia, serif; font-size: 18px;"> for Intro.
-    - HTML: Use <p style="font-family: Verdana, sans-serif;"> for Body paragraphs.
+    
+    STRICT SEO & STRUCTURE RULES:
+    1. FORMAT: Title ||| Search Description ||| Body
+    2. NO MARKDOWN: Do NOT use '#' or '##' symbols for headings. Use HTML tags only.
+    3. TITLE: Direct, simple, NO colons (:), Max 55 chars. Use searchable keywords like '{topic} Explained'.
+    4. SEARCH DESCRIPTION: Write a 140-character meta description for Google search.
+    5. TONE: Conversational, personal, engaging (Use "We", "I"). No robotic filler words.
+    6. ZERO-CLICK FAQ: After Intro, add a 'Quick Summary FAQ' section with 2 Q&As using <div> tags.
+    7. STRUCTURE: Intro -> FAQ -> [IMG1] -> 8-9 Subheadings (<h3>) -> [IMG2] -> [IMG3] -> Conclusion (Takeaways) -> Author Bio.
+    8. INTERNAL/EXTERNAL: Naturally place [INTERNAL_LINK] and [EXTERNAL_LINK] in paragraphs.
+    9. E-E-A-T: End with: "About Author: Senior Tech Analyst at Technovexa with 10+ years of AI expertise."
+    10. HTML ONLY: Use <h3> for headings. NEVER use '#' or Markdown. 
+    11. FONTS: Intro <p> in Georgia (18px), Body <p> in Verdana.
     """
     
     for model in models:
         try:
             client = InferenceClient(model=model, token=HF_TOKEN)
-            response = client.chat_completion([{"role": "user", "content": prompt}], max_tokens=2000, temperature=0.8)
-            return response.choices[0].message.content
+            response = client.chat_completion([{"role": "user", "content": prompt}], max_tokens=2500, temperature=0.8)
+            content = response.choices[0].message.content
+            
+            # Cleaning: Remove any accidental Markdown hashes
+            content = content.replace("#", "")
+            return content
         except Exception as e:
-            print(f"Model {model} failed. Retrying...")
+            print(f"Model {model} failed. Error: {e}")
             time.sleep(2)
+            
     return "Error: AI generation failed."
 
 # --- 3. POSTING LOGIC ---
@@ -162,14 +175,38 @@ def post_to_blogger():
     final_labels = get_smart_labels(topic)
     full_response = generate_blog_post(topic)
     
+    # Check for 3 parts: Title ||| Meta ||| Body
     if "|||" not in full_response: return
 
     parts = full_response.split("|||")
+    
+    # Logic for Title, Meta and Body separation
     raw_title = parts[0].strip().replace(":", "").replace('"', '')
-    content_html = parts[1].strip()
+    
+    # Agar 3 parts hain to meta_desc lo, varna empty string
+    meta_description = parts[1].strip()[:150] if len(parts) > 2 else ""
+    content_html = parts[2].strip() if len(parts) > 2 else parts[1].strip()
 
     # Title Length Control (55 Chars)
     final_title = raw_title[:55].rsplit(' ', 1)[0] if len(raw_title) > 55 else raw_title
+    
+    # SEO Linking Logic (Internal & External)
+    # Note: Authority link ke liye Wikipedia ya Research site use ki hai
+    content_html = content_html.replace("[INTERNAL_LINK]", f'<a href="https://{os.getenv("BLOG_URL", "technovexa.blogspot.com")}">latest AI insights</a>')
+    content_html = content_html.replace("[EXTERNAL_LINK]", '<a href="https://en.wikipedia.org/wiki/Artificial_intelligence" rel="nofollow">technical authority research</a>')
+
+    # Schema Markup (JSON-LD) for SEO
+    schema_markup = f"""
+    <script type="application/ld+json">
+    {{
+      "@context": "https://schema.org",
+      "@type": "TechArticle",
+      "headline": "{final_title}",
+      "description": "{meta_description}",
+      "author": {{ "@type": "Organization", "name": "Technovexa AI" }}
+    }}
+    </script>
+    """
     
     images = get_image_urls(topic)
     img_style = 'style="width:100%; border-radius:10px; margin: 20px 0; box-shadow: 0 4px 8px rgba(0,0,0,0.1);"'
@@ -177,7 +214,9 @@ def post_to_blogger():
     for i, img in enumerate(images):
         content_html = content_html.replace(f'[IMG{i+1}]', f'<img src="{img}" {img_style}><br>')
 
+    # Final Body with Schema + Content
     final_body = f"""
+    {schema_markup}
     <h1 style="text-align: center; font-family: 'Helvetica Neue', sans-serif; color: #2c3e50;">{final_title}</h1>
     <hr style="border:0; height:1px; background-image: linear-gradient(to right, #ccc, #333, #ccc);">
     {content_html}
@@ -185,9 +224,17 @@ def post_to_blogger():
     """
 
     service = get_blogger_service()
-    body = {"title": final_title, "content": final_body, "labels": final_labels}
-    service.posts().insert(blogId=BLOGGER_ID, body=body).execute()
-    print(f"Posted: {final_title} | Tags: {final_labels}")
+    
+    # Final Post Body with Search Description
+    post_body = {
+        "title": final_title, 
+        "content": final_body, 
+        "labels": final_labels,
+        "searchDescription": meta_description  # Adds the Meta Description to Blogger
+    }
+    
+    service.posts().insert(blogId=BLOGGER_ID, body=post_body).execute()
+    print(f"Posted: {final_title} | Tags: {final_labels} | SEO Optimized: Yes")
 
 if __name__ == "__main__":
     post_to_blogger()
