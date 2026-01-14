@@ -143,6 +143,7 @@ def generate_blog_post(topic):
     9. E-E-A-T: End with: "About Author: Senior Tech Analyst at Technovexa with 10+ years of AI expertise."
     10. HTML ONLY: Use <h3> for headings. NEVER use '#' or Markdown. 
     11. FONTS: Intro <p> in Georgia (18px), Body <p> in Verdana.
+    12. IMAGE PROTECTION: ONLY write the text [IMG1], [IMG2], [IMG3]. NEVER write <img> tags, alt text, or style attributes.
     """
     
     for model in models:
@@ -161,14 +162,27 @@ def generate_blog_post(topic):
     return "Error: AI generation failed."
 
 # --- 3. POSTING LOGIC ---
+# --- 5. IMAGE LOGIC (Topic Related & Reliable) ---
 def get_image_urls(topic):
-    safe_topic = topic.replace(" ", "%20").replace("&", "")
-    seed = random.randint(1, 1000)
-    return [
-        f"https://image.pollinations.ai/prompt/futuristic%20tech%20{safe_topic}?nologo=true&seed={seed}",
-        f"https://image.pollinations.ai/prompt/ai%20chip%20circuit%20{safe_topic}?nologo=true&seed={seed+1}",
-        f"https://image.pollinations.ai/prompt/human%20robot%20interaction%20{safe_topic}?nologo=true&seed={seed+2}"
+    # Topic ko URL friendly banaya, special characters hataye
+    safe_topic = topic.replace(" ", "%20").replace("&", "").replace("/", "").replace(":", "").replace('"', '')
+    seed = random.randint(1, 10000) # Seed range badhaya for more variety
+
+    # Image prompts ko aur specific aur descriptive banaya gaya hai
+    # Har image ke liye alag focus
+    img_prompts = [
+        f"futuristic%20concept%20of%20{safe_topic}%20high%20tech%20digital%20art", # Overall concept
+        f"detailed%20illustration%20of%20AI%20innovation%20related%20to%20{safe_topic}", # Technical/Innovation
+        f"people%20interacting%20with%20{safe_topic}%20in%20a%20modern%20setting", # Real-world application
     ]
+    
+    image_urls = []
+    for i, prompt_text in enumerate(img_prompts):
+        # Pollinations.ai URL parameters adjust kiye hain for better results
+        url = f"https://image.pollinations.ai/prompt/{prompt_text}?width=1024&height=576&nologo=true&seed={seed + i}&enhance=true"
+        image_urls.append(url)
+        
+    return image_urls
 
 def post_to_blogger():
     topic = get_trending_topic()
