@@ -1,16 +1,19 @@
 import os
 import random
 import time
+import re
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from huggingface_hub import InferenceClient
+from openai import OpenAI  # Changed: Using OpenAI client for GitHub Models
 
 # --- 1. CONFIGURATION ---
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 REFRESH_TOKEN = os.getenv("GOOGLE_REFRESH_TOKEN")
 BLOGGER_ID = os.getenv("BLOGGER_BLOG_ID")
-HF_TOKEN = os.getenv("HF_TOKEN")
+
+# Changed: Github Token instead of HF_TOKEN
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN") 
 
 def get_blogger_service():
     creds = Credentials(
@@ -54,32 +57,7 @@ def get_trending_topic():
         "AI Trends 2026", "Technology Trends 2026", 
         "How AI is Changing Technology", "AI Impact on Jobs", 
         "Global Technology News", "US Technology News", 
-        "India AI & Tech News", "Asia Technology Trends",
-        
-        # AI NEWS & UPDATES (60%)
-        "Artificial Intelligence Latest News", "Generative AI Updates", 
-        "AI Models GPT Gemini Claude", "Machine Learning Breakthroughs", 
-        "Deep Learning Innovations", "AI Automation in Industries", 
-        "AI Ethics & Regulations", "AI Policy & Government Rules", 
-        "AI in Real Life Applications", "Future of Artificial Intelligence",
-        "OpenAI Latest Updates", "Google AI & Technology News", 
-        "Microsoft AI & Tech News", "Meta AI Developments", 
-        "AI Trends 2026", "New AI Tools Launch", "Free AI Tools News",
-        
-        # TECHNOLOGY NEWS (30%)
-        "Future Technology Trends", "Emerging Technologies", 
-        "Software & App Updates", "Cyber Security Threats & Fixes", 
-        "Cloud Computing News", "Internet & Digital Technology", 
-        "Smart Technology & IoT", "Data Privacy & Security", 
-        "Open Source Technology News", "Apple Technology News",
-        "Startup & Funding News", "New Product Launches",
-        "Global Technology News", "US Technology News", 
-        "India AI & Tech News", "Asia Technology Trends",
-        
-        # EVERGREEN ANALYSIS (10%)
-        "How AI is Changing Technology", "AI Impact on Jobs", 
-        "AI vs Human Intelligence", "Future of Automation",
-        "Technology Trends 2026", "SaaS Platform Updates"
+        "India AI & Tech News", "Asia Technology Trends"
     ]
     return random.choice(topics)
 
@@ -122,12 +100,17 @@ def get_smart_labels(topic):
     if len(unique_labels) < 3: unique_labels.extend(["Digital Innovation", "Tech Updates"])
     return unique_labels[:5]
 
-# --- 2. AI CONTENT (HUMANIZED & SEO OPTIMIZED) ---
+# --- 2. AI CONTENT (HUMANIZED & SEO OPTIMIZED - VIA GITHUB MODELS) ---
 def generate_blog_post(topic):
-    print(f"Generating optimized content for: {topic}...")
-    models = ["mistralai/Mistral-7B-Instruct-v0.3", "microsoft/Phi-3.5-mini-instruct", "Qwen/Qwen2.5-72B-Instruct"]
+    print(f"Generating optimized content for: {topic} using DeepSeek R1...")
     
-    # Updated Prompt with SEO, FAQ, Conclusion and E-E-A-T
+    # Initialize OpenAI client for GitHub Models
+    client = OpenAI(
+        base_url="https://models.inference.ai.azure.com",
+        api_key=GITHUB_TOKEN,
+    )
+    
+    # Updated Prompt
     prompt = f"""
     Write a humanized, senior tech journalist style blog post for category: '{topic}'.
     
@@ -146,39 +129,52 @@ def generate_blog_post(topic):
     12. IMAGE PROTECTION: ONLY write the text [IMG1], [IMG2], [IMG3]. NEVER write <img> tags, alt text, or style attributes.
     """
     
-    for model in models:
-        try:
-            client = InferenceClient(model=model, token=HF_TOKEN)
-            response = client.chat_completion([{"role": "user", "content": prompt}], max_tokens=2500, temperature=0.8)
-            content = response.choices[0].message.content
-            
-            # Cleaning: Remove any accidental Markdown hashes
-            content = content.replace("#", "")
-            return content
-        except Exception as e:
-            print(f"Model {model} failed. Error: {e}")
-            time.sleep(2)
-            
-    return "Error: AI generation failed."
+    try:
+        response = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a senior tech journalist and SEO expert.",
+                },
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            model="DeepSeek-R1", # Using DeepSeek R1 via GitHub Models
+            temperature=0.8,
+            max_tokens=4000,
+        )
+
+        content = response.choices[0].message.content
+        
+        # DeepSeek R1 often outputs a <think> block. We need to remove it.
+        if "</think>" in content:
+            content = content.split("</think>")[-1].strip()
+
+        # Cleaning: Remove any accidental Markdown hashes
+        content = content.replace("#", "")
+        return content
+
+    except Exception as e:
+        print(f"DeepSeek generation failed. Error: {e}")
+        return "Error: AI generation failed."
 
 # --- 3. POSTING LOGIC ---
 # --- 5. IMAGE LOGIC (Topic Related & Reliable) ---
 def get_image_urls(topic):
-    # Topic ko URL friendly banaya, special characters hataye
+    # Topic ko URL friendly banaya
     safe_topic = topic.replace(" ", "%20").replace("&", "").replace("/", "").replace(":", "").replace('"', '')
-    seed = random.randint(1, 10000) # Seed range badhaya for more variety
+    seed = random.randint(1, 10000)
 
-    # Image prompts ko aur specific aur descriptive banaya gaya hai
-    # Har image ke liye alag focus
     img_prompts = [
-        f"futuristic%20concept%20of%20{safe_topic}%20high%20tech%20digital%20art", # Overall concept
-        f"detailed%20illustration%20of%20AI%20innovation%20related%20to%20{safe_topic}", # Technical/Innovation
-        f"people%20interacting%20with%20{safe_topic}%20in%20a%20modern%20setting", # Real-world application
+        f"futuristic%20concept%20of%20{safe_topic}%20high%20tech%20digital%20art", 
+        f"detailed%20illustration%20of%20AI%20innovation%20related%20to%20{safe_topic}", 
+        f"people%20interacting%20with%20{safe_topic}%20in%20a%20modern%20setting",
     ]
     
     image_urls = []
     for i, prompt_text in enumerate(img_prompts):
-        # Pollinations.ai URL parameters adjust kiye hain for better results
         url = f"https://image.pollinations.ai/prompt/{prompt_text}?width=1024&height=576&nologo=true&seed={seed + i}&enhance=true"
         image_urls.append(url)
         
@@ -190,26 +186,26 @@ def post_to_blogger():
     full_response = generate_blog_post(topic)
     
     # Check for 3 parts: Title ||| Meta ||| Body
-    if "|||" not in full_response: return
+    if not full_response or "|||" not in full_response:
+        print("Error: Invalid response format from AI.")
+        return
 
     parts = full_response.split("|||")
     
     # Logic for Title, Meta and Body separation
     raw_title = parts[0].strip().replace(":", "").replace('"', '')
     
-    # Agar 3 parts hain to meta_desc lo, varna empty string
     meta_description = parts[1].strip()[:150] if len(parts) > 2 else ""
     content_html = parts[2].strip() if len(parts) > 2 else parts[1].strip()
 
-    # Title Length Control (55 Chars)
+    # Title Length Control
     final_title = raw_title[:55].rsplit(' ', 1)[0] if len(raw_title) > 55 else raw_title
     
-    # SEO Linking Logic (Internal & External)
-    # Note: Authority link ke liye Wikipedia ya Research site use ki hai
+    # SEO Linking Logic
     content_html = content_html.replace("[INTERNAL_LINK]", f'<a href="https://{os.getenv("BLOG_URL", "technovexa.blogspot.com")}">latest AI insights</a>')
     content_html = content_html.replace("[EXTERNAL_LINK]", '<a href="https://en.wikipedia.org/wiki/Artificial_intelligence" rel="nofollow">technical authority research</a>')
 
-    # Schema Markup (JSON-LD) for SEO
+    # Schema Markup
     schema_markup = f"""
     <script type="application/ld+json">
     {{
@@ -228,7 +224,7 @@ def post_to_blogger():
     for i, img in enumerate(images):
         content_html = content_html.replace(f'[IMG{i+1}]', f'<img src="{img}" {img_style}><br>')
 
-    # Final Body with Schema + Content
+    # Final Body
     final_body = f"""
     {schema_markup}
     <h1 style="text-align: center; font-family: 'Helvetica Neue', sans-serif; color: #2c3e50;">{final_title}</h1>
@@ -239,12 +235,11 @@ def post_to_blogger():
 
     service = get_blogger_service()
     
-    # Final Post Body with Search Description
     post_body = {
         "title": final_title, 
         "content": final_body, 
         "labels": final_labels,
-        "searchDescription": meta_description  # Adds the Meta Description to Blogger
+        "searchDescription": meta_description
     }
     
     service.posts().insert(blogId=BLOGGER_ID, body=post_body).execute()
