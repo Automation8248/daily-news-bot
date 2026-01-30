@@ -2,10 +2,10 @@ name: Daily News Poster
 
 on:
   schedule:
-    # Subah 8:30 AM aur Shaam 5:30 PM (IST ke hisaab se approx)
-    - cron: '0 3,12 * * *'
+    # 01:00 UTC = 8:00 PM New York Time (EST) - USA Free Time
+    - cron: '0 1 * * *'
   workflow_dispatch: # Button se manually chalane ke liye
-
+  
 jobs:
   build:
     runs-on: ubuntu-latest
