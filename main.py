@@ -3,6 +3,7 @@ import random
 import time
 import feedparser
 import re
+from difflib import SequenceMatcher  # NEW: Similarity check karne ke liye
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from openai import OpenAI
@@ -15,9 +16,7 @@ BLOGGER_ID = os.getenv("BLOGGER_BLOG_ID")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 BLOG_URL = os.getenv("BLOG_URL", "technovexa.blogspot.com")
 
-# --- MASTER LABEL LIST (FROM YOUR IMAGE) ---
-# Ye wo labels hain jo aapke blog par already hain.
-# Code koshish karega ki inhi mein se select kare taaki naye duplicate na banein.
+# --- MASTER LABEL LIST ---
 Existing_Labels_DB = [
     "AI Models", "AI News", "AI Updates", 
     "Cloud Computing", "Digital Innovation", 
@@ -34,48 +33,84 @@ def get_blogger_service():
         client_id=CLIENT_ID,
         client_secret=CLIENT_SECRET
     )
-    # Increased timeout for safety
     return build('blogger', 'v3', credentials=creds, static_discovery=False)
 
-# --- 2. TOPIC STRATEGY ---
-def get_trending_topic():
+# --- NEW FUNCTION: CHECK SIMILARITY ---
+def is_similar(a, b):
+    """Checks if two titles are too similar (more than 60% match)"""
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio() > 0.6
+
+# --- 2. TOPIC STRATEGY (UPDATED WITH HISTORY CHECK) ---
+def get_unique_trending_topic(service):
+    # Step 1: Fetch existing post titles from Blogger (History)
+    try:
+        print("Checking blog history to avoid duplicates...")
+        posts = service.posts().list(blogId=BLOGGER_ID, maxResults=20, fetchBodies=False).execute()
+        existing_titles = [p['title'] for p in posts.get('items', [])]
+    except Exception as e:
+        print(f"⚠️ Could not fetch history: {e}")
+        existing_titles = []
+
+    # Step 2: Fetch Live Trending News
     try:
         print("Fetching live trending tech news from USA...")
-        # Google News Technology US Feed
         rss_url = "https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?ceid=US:en&hl=en-US&gl=US"
         feed = feedparser.parse(rss_url)
+        
         if feed.entries:
-            # Pick one random topic from top 5 to ensure variety
-            entry = random.choice(feed.entries[:5])
-            print(f"Live Topic Selected: {entry.title}")
-            return entry.title
+            # Check top 10 entries instead of just random choice
+            candidates = feed.entries[:10]
+            random.shuffle(candidates) # Shuffle to keep it random but checked
+
+            for entry in candidates:
+                title = entry.title
+                
+                # Check 1: Is this title in history?
+                is_duplicate = False
+                for old_title in existing_titles:
+                    if is_similar(title, old_title):
+                        print(f"⏭️ Skipping Duplicate Topic: {title}")
+                        is_duplicate = True
+                        break
+                
+                if not is_duplicate:
+                    print(f"✅ Fresh Topic Selected: {title}")
+                    return title
+
+            print("⚠️ All trending topics seem to be duplicates or covered.")
+            
     except Exception as e:
-        print(f"Live news failed ({e}). Using fallback list.")
+        print(f"Live news failed ({e}). Using fallback.")
 
-    # Fallback Topics
-    topics = ["Future of AI 2026", "Google DeepMind Latest", "OpenAI Sora Updates", "Apple Vision Pro News"]
-    return random.choice(topics)
+    # Step 3: Fallback Topics (Only if live fails)
+    # Ensure fallback isn't a duplicate either
+    fallbacks = ["Future of AI 2026", "Google DeepMind Latest", "OpenAI Sora Updates", "Apple Vision Pro News"]
+    for ft in fallbacks:
+        is_dup = False
+        for old_title in existing_titles:
+             if is_similar(ft, old_title):
+                 is_dup = True
+                 break
+        if not is_dup:
+            return ft
+            
+    return fallbacks[0] # Last resort
 
-# --- 3. SMART LABEL REUSING SYSTEM (NEW) ---
+# --- 3. SMART LABEL REUSING SYSTEM ---
 def get_smart_labels(topic):
     topic_lower = topic.lower()
     final_labels = set()
     
-    # Keyword matching strategy to reuse existing labels
-    
-    # 1. Broad Technology Matches
     if any(k in topic_lower for k in ["tech", "gadget", "device", "future"]):
         final_labels.add("Technology News")
         final_labels.add("Tech Updates")
         
-    # 2. AI Specific Matches
     if any(k in topic_lower for k in ["ai ", "artificial intelligence", "ml", "deep learning"]):
         final_labels.add("AI News")
         final_labels.add("AI Updates")
     if any(k in topic_lower for k in ["gpt", "gemini", "claude", "llama", "model"]):
         final_labels.add("AI Models")
 
-    # 3. Company Specific Matches
     if "google" in topic_lower or "alphabet" in topic_lower:
         final_labels.add("Google News")
     if "openai" in topic_lower or "chatgpt" in topic_lower:
@@ -84,24 +119,18 @@ def get_smart_labels(topic):
          final_labels.add("Software Updates")
          final_labels.add("Cloud Computing")
 
-    # 4. Regional/Specific Matches
     if "india" in topic_lower:
         final_labels.add("India Tech News")
     else:
-         # Agar India specific nahi hai to Global maan lete hain
-         if random.random() > 0.7: # 30% chance to add global tag
+         if random.random() > 0.7:
              final_labels.add("Global Tech News")
 
-    # 5. Fallback - Agar koi bhi label match nahi hua
     if not final_labels:
         final_labels.add("Technology News")
-        print("No specific match found, using generic label.")
 
-    # Convert set back to list and limit to 4 labels max
     return list(final_labels)[:4]
 
-
-# --- 4. AI CONTENT GENERATION (UPDATED PROMPT) ---
+# --- 4. AI CONTENT GENERATION ---
 def generate_blog_content(topic):
     print(f"Generating 900-1200 word content for: {topic}...")
     
@@ -110,7 +139,6 @@ def generate_blog_content(topic):
         api_key=GITHUB_TOKEN,
     )
     
-    # Updated Prompt with Strict Constraints
     prompt = f"""
     You are a senior tech journalist targeting a US audience. Write a deep-dive blog post about: '{topic}'.
     
@@ -145,14 +173,13 @@ def generate_blog_content(topic):
             ],
             model="DeepSeek-R1",
             temperature=0.7,
-            max_tokens=6000, # Increased tokens for longer articles
+            max_tokens=6000,
         )
 
         content = response.choices[0].message.content
         if "</think>" in content:
             content = content.split("</think>")[-1].strip()
             
-        # FINAL SAFETY CLEANUP: Remove any rogue * or # characters
         content = content.replace("*", "").replace("#", "")
         return content
 
@@ -164,15 +191,19 @@ def generate_blog_content(topic):
 def get_image_urls(topic):
     safe_topic = topic.replace(" ", "%20")
     seed = random.randint(1, 99999)
-    # Image 1 (Top Concept)
     url1 = f"https://image.pollinations.ai/prompt/hyper-realistic%20concept%20photo%20of%20{safe_topic}?width=1024&height=576&nologo=true&seed={seed}&enhance=true"
-    # Image 2 (Middle Detail)
     url2 = f"https://image.pollinations.ai/prompt/detailed%20diagrammatic%20tech%20illustration%20related%20to%20{safe_topic}?width=1024&height=576&nologo=true&seed={seed+100}&enhance=true"
     return [url1, url2]
 
 # --- 6. POST CONSTRUCTION ---
 def post_to_blogger():
-    topic = get_trending_topic()
+    # Service pehle initialize kiya taaki history check kar sakein
+    service = get_blogger_service()
+    
+    # Updated: Pass service to check history
+    topic = get_unique_trending_topic(service)
+    
+    # Generate Content
     full_response = generate_blog_content(topic)
     
     if not full_response: return
@@ -197,11 +228,9 @@ def post_to_blogger():
     images = get_image_urls(topic)
     img_style = 'style="width:100%; border-radius:8px; margin: 25px 0; display:block; box-shadow: 0 2px 5px rgba(0,0,0,0.1);"'
     
-    # Internal Link Replacement
     read_more = f'<a href="https://{BLOG_URL}" style="color:#007bff; text-decoration:none; font-weight:bold;">Explore more tech insights here.</a>'
     body_html = body_html.replace("[INTERNAL_LINK]", read_more)
 
-    # Insert Image 2 in Middle
     paras = body_html.split("</p>")
     if len(paras) > 4:
         mid = len(paras) // 2
@@ -220,11 +249,9 @@ def post_to_blogger():
     </div>
     """
 
-    # Get reused labels
     selected_labels = get_smart_labels(topic)
-    print(f"Labels selected for this post: {selected_labels}")
+    print(f"Labels selected: {selected_labels}")
 
-    service = get_blogger_service()
     post_body = {
         "title": final_title,
         "content": final_content,
@@ -232,13 +259,12 @@ def post_to_blogger():
         "searchDescription": meta_description
     }
     
-    # ACCOUNT SAFETY PAUSE
-    print("Pausing for a few seconds before posting for safety...")
-    time.sleep(random.randint(5, 10)) # Human-like pause
+    print("Pausing for safety...")
+    time.sleep(random.randint(5, 10))
 
     try:
         service.posts().insert(blogId=BLOGGER_ID, body=post_body, isDraft=False).execute()
-        print(f"✅ SUCCESS: Posted '{final_title}' (Approx words: High)")
+        print(f"✅ SUCCESS: Posted '{final_title}'")
     except Exception as e:
         print(f"❌ Error posting to Blogger: {e}")
 
