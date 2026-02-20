@@ -2,8 +2,7 @@ name: Daily News Poster
 
 on:
   schedule:
-    # 01:00 UTC = 8:00 PM New York Time (EST) - USA Free Time
-    - cron: '0 1 * * *'
+    - cron: '0 10 */2 * *' # Har teesre din 10 AM UTC par chalega
   workflow_dispatch: # Button se manually chalane ke liye
   
 jobs:
