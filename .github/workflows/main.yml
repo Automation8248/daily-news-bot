@@ -20,7 +20,8 @@ jobs:
       - name: Install libraries
         run: |
           python -m pip install --upgrade pip
-          pip install google-auth google-auth-oauthlib google-api-python-client requests openai feedparser
+          # Yahan 'telethon' library add kar di gayi hai
+          pip install google-auth google-auth-oauthlib google-api-python-client requests openai feedparser telethon
           
       - name: Run Auto Poster
         env:
@@ -29,4 +30,7 @@ jobs:
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
           BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
           GITHUB_TOKEN: ${{ secrets.MY_GITHUB_TOKEN }}
+          # Naye Telegram Secrets yahan add kar diye gaye hain
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
         run: python main.py
