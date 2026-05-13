@@ -1,11 +1,8 @@
 import os
-import random
-import time
+import requests
 import feedparser
-import re
-import asyncio  # NEW: Telegram ke liye zaroori
-from telethon import TelegramClient, events # NEW: Telegram automation ke liye
 from difflib import SequenceMatcher
+from newspaper import Article
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
@@ -15,12 +12,10 @@ CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 REFRESH_TOKEN = os.getenv("GOOGLE_REFRESH_TOKEN")
 BLOGGER_ID = os.getenv("BLOGGER_BLOG_ID")
-BLOG_URL = os.getenv("BLOG_URL", "technovexa.blogspot.com")
 
-# Telegram Config (Aapne jo API ID/Hash nikali wo yahan use hogi)
-API_ID = os.getenv("TELEGRAM_API_ID")
-API_HASH = os.getenv("TELEGRAM_API_HASH")
-BOT_USERNAME = "@chatgpt_gidbot"
+# Telegram Notification Config (Sirf simple token aur chat id)
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # --- MASTER LABEL LIST ---
 Existing_Labels_DB = [
@@ -33,152 +28,118 @@ Existing_Labels_DB = [
 
 def get_blogger_service():
     creds = Credentials(
-        None,
-        refresh_token=REFRESH_TOKEN,
+        None, refresh_token=REFRESH_TOKEN,
         token_uri="https://oauth2.googleapis.com/token",
-        client_id=CLIENT_ID,
-        client_secret=CLIENT_SECRET
+        client_id=CLIENT_ID, client_secret=CLIENT_SECRET
     )
     return build('blogger', 'v3', credentials=creds, static_discovery=False)
 
 def is_similar(a, b):
     return SequenceMatcher(None, a.lower(), b.lower()).ratio() > 0.6
 
-# --- 2. TOPIC STRATEGY ---
-def get_unique_trending_topic(service):
+# --- 2. SMART LABEL SYSTEM ---
+def get_smart_labels(topic):
+    topic_lower = topic.lower()
+    temp_labels = set()
+    
+    if any(k in topic_lower for k in ["tech", "gadget", "device"]): temp_labels.add("Technology News")
+    if any(k in topic_lower for k in ["ai", "artificial intelligence"]): temp_labels.update(["AI News", "AI Models"])
+    if "google" in topic_lower: temp_labels.add("Google News")
+    if "cloud" in topic_lower: temp_labels.add("Cloud Computing")
+    if "software" in topic_lower or "update" in topic_lower: temp_labels.add("Software Updates")
+    if "openai" in topic_lower or "chatgpt" in topic_lower: temp_labels.add("OpenAI News")
+    if "india" in topic_lower: temp_labels.add("India Tech News")
+    if "global" in topic_lower or "world" in topic_lower: temp_labels.add("Global Tech News")
+    if "innovation" in topic_lower or "future" in topic_lower: temp_labels.add("Digital Innovation")
+
+    final_labels = [lbl for lbl in temp_labels if lbl in Existing_Labels_DB]
+    return final_labels[:4] if final_labels else ["Technology News"]
+
+# --- 3. FETCH ORIGINAL ARTICLE & IMAGE ---
+def fetch_and_extract_news(service):
     try:
-        print("Checking blog history to avoid duplicates...")
         posts = service.posts().list(blogId=BLOGGER_ID, maxResults=20, fetchBodies=False).execute()
         existing_titles = [p['title'] for p in posts.get('items', [])]
-    except Exception as e:
-        print(f"⚠️ Could not fetch history: {e}")
+    except Exception:
         existing_titles = []
 
     try:
-        print("Fetching live trending tech news...")
         rss_url = "https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?ceid=US:en&hl=en-US&gl=US"
-        feed = feedparser.parse(rss_url)
+        entries = feedparser.parse(rss_url).entries[:15]
         
-        if feed.entries:
-            candidates = feed.entries[:10]
-            random.shuffle(candidates)
-            for entry in candidates:
-                title = entry.title
-                is_duplicate = False
-                for old_title in existing_titles:
-                    if is_similar(title, old_title):
-                        is_duplicate = True
-                        break
-                if not is_duplicate:
-                    return title
+        for entry in entries:
+            # Duplicate check
+            if not any(is_similar(entry.title, old) for old in existing_titles):
+                news_url = entry.link
+                
+                try:
+                    # Original Article download aur parse karna
+                    article = Article(news_url)
+                    article.download()
+                    article.parse()
+                    
+                    # Ensure karte hain ki article mein image ho aur text decent size ka ho
+                    if article.top_image and len(article.text) > 400:
+                        return {
+                            "title": article.title if article.title else entry.title,
+                            "content": article.text,
+                            "image_url": article.top_image,
+                            "source_url": news_url
+                        }
+                except Exception as e:
+                    print(f"Extraction failed for {news_url}: {e}")
+                    continue
     except Exception as e:
-        print(f"Live news failed ({e}).")
+        print(f"RSS Fetch failed: {e}")
 
-    return "Future of AI 2026"
+    return None
 
-# --- 3. SMART LABEL REUSING SYSTEM ---
-def get_smart_labels(topic):
-    topic_lower = topic.lower()
-    final_labels = set()
-    if any(k in topic_lower for k in ["tech", "gadget", "device"]): final_labels.add("Technology News")
-    if "ai" in topic_lower: final_labels.add("AI News")
-    if "google" in topic_lower: final_labels.add("Google News")
-    if not final_labels: final_labels.add("Technology News")
-    return list(final_labels)[:4]
-
-# --- 4. NEW: TELEGRAM AI CONTENT GENERATION ---
-async def generate_content_via_telegram(topic):
-    print(f"Requesting content from Telegram Bot for: {topic}...")
-    
-    # Telethon Session setup
-    client = TelegramClient('session_name', API_ID, API_HASH)
-    await client.start()
-
-    prompt = f"""
-    Write a deep-dive blog post about: '{topic}'.
-    1. Word Count: 900-1200 words.
-    2. No asterisks (*) or hashtags (#).
-    3. Use '|||' separator for Title, Intro, Body, and Meta Description.
-    Format: Title: [Title] ||| [Intro HTML] ||| [Detailed Body HTML] ||| Description: [Meta]
-    """
-
-    try:
-        # Send message to bot
-        await client.send_message(BOT_USERNAME, prompt)
-        
-        # Wait for reply (max 120 seconds)
-        print("Waiting for bot response...")
-        await asyncio.sleep(15) # Bot ko sochne ka time dena
-        
-        async for message in client.iter_messages(BOT_USERNAME, limit=1):
-            content = message.text
-            content = content.replace("*", "").replace("#", "")
-            await client.disconnect()
-            return content
-
-    except Exception as e:
-        print(f"Telegram Generation failed: {e}")
-        await client.disconnect()
-        return None
-
-# --- 5. IMAGE GENERATION ---
-def get_image_urls(topic):
-    safe_topic = topic.replace(" ", "%20")
-    seed = random.randint(1, 99999)
-    url1 = f"https://image.pollinations.ai/prompt/hyper-realistic%20concept%20photo%20of%20{safe_topic}?width=1024&height=576&nologo=true&seed={seed}&enhance=true"
-    url2 = f"https://image.pollinations.ai/prompt/detailed%20diagrammatic%20tech%20illustration%20related%20to%20{safe_topic}?width=1024&height=576&nologo=true&seed={seed+100}&enhance=true"
-    return [url1, url2]
-
-# --- 6. POST CONSTRUCTION ---
+# --- 4. POST CONSTRUCTION & PUBLISH ---
 def post_to_blogger():
     service = get_blogger_service()
-    topic = get_unique_trending_topic(service)
+    article_data = fetch_and_extract_news(service)
     
-    # Run Async Telegram function inside Sync script
-    full_response = asyncio.run(generate_content_via_telegram(topic))
+    if not article_data:
+        print("No suitable new article found today.")
+        return
+
+    final_title = article_data['title'][:70].strip()
+    meta_description = final_title[:150]
+    img_style = 'style="max-width:100%; height:auto; border-radius:8px; margin: 25px 0; display:block;"'
     
-    if not full_response: return
+    # Text format ko HTML paragraphs mein convert karna
+    formatted_content = article_data['content'].replace('\n\n', '</p><p>').replace('\n', '<br>')
 
-    # Parsing Logic (Same as your original code)
-    if "|||" in full_response:
-        parts = full_response.split("|||")
-        raw_title = parts[0].replace("Title:", "").strip()
-        intro_html = parts[1].strip()
-        body_html = parts[2].strip()
-        meta_description = parts[3].replace("Description:", "").strip() if len(parts) > 3 else ""
-    else:
-        raw_title = topic
-        intro_html = "<p>Introduction to " + topic + "</p>"
-        body_html = full_response
-        meta_description = topic
-
-    final_title = raw_title[:70].strip()
-    images = get_image_urls(topic)
-    img_style = 'style="width:100%; border-radius:8px; margin: 25px 0;"'
-    
-    read_more = f'<a href="https://{BLOG_URL}" style="color:#007bff; font-weight:bold;">Explore more tech insights here.</a>'
-    body_html = body_html.replace("[INTERNAL_LINK]", read_more)
-
+    # HTML Structure jisme last mein CREDIT diya gaya hai
     final_content = f"""
-    <div style="font-family: Arial; font-size: 17px;">
+    <div style="font-family: Arial; font-size: 16px; line-height: 1.6;">
         <h1 style="text-align:center;">{final_title}</h1>
-        {intro_html}
-        <img src="{images[0]}" alt="Main Image" {img_style}>
-        {body_html}
-        <br><img src="{images[1]}" alt="Secondary Image" {img_style}>
+        <img src="{article_data['image_url']}" alt="News Image" {img_style}>
+        <p>{formatted_content}</p>
+        <br><hr><br>
+        <p style="font-size: 14px; color: #555;">
+            <em><strong>Credit:</strong> This article was originally published at <a href="{article_data['source_url']}" target="_blank" rel="nofollow">Source Link</a>. All rights reserved by the original publisher.</em>
+        </p>
     </div>
     """
 
-    post_body = {
-        "title": final_title,
-        "content": final_content,
-        "labels": get_smart_labels(topic),
-        "searchDescription": meta_description
-    }
-    
     try:
-        service.posts().insert(blogId=BLOGGER_ID, body=post_body, isDraft=False).execute()
+        # Blogger par insert karna
+        service.posts().insert(blogId=BLOGGER_ID, body={
+            "title": final_title,
+            "content": final_content,
+            "labels": get_smart_labels(final_title),
+            "searchDescription": meta_description
+        }, isDraft=False).execute()
+        
         print(f"✅ SUCCESS: Posted '{final_title}'")
+        
+        # Telegram par simple success notification bhejna
+        if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
+            msg = f"Successfully posted to Blogger!\n\nTitle: {final_title}"
+            telegram_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+            requests.post(telegram_url, json={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
+            
     except Exception as e:
         print(f"❌ Blogger Error: {e}")
 
