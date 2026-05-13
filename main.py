@@ -53,47 +53,60 @@ def get_smart_labels(topic):
     final_labels = [lbl for lbl in temp_labels if lbl in Existing_Labels_DB]
     return final_labels[:4] if final_labels else ["Technology News"]
 
-# --- 3. STRICTLY FETCH FROM GOOGLE RSS ONLY ---
+# --- 3. STRICT TECH & USA FILTER LOGIC ---
+def is_tech_related(text, title):
+    # Yeh check karta hai ki article properly tech se related hai ya nahi
+    tech_keywords = [
+        "technology", "tech", "software", "hardware", "smartphone", "apple", 
+        "google", "microsoft", "cybersecurity", "ai", "artificial intelligence", 
+        "gadget", "robotics", "app", "startup", "silicon valley", "crypto"
+    ]
+    
+    content_lower = text.lower() + " " + title.lower()
+    # Agar inme se kam se kam 2 tech words article mein hain, tabhi usko tech article manenge
+    match_count = sum(1 for word in tech_keywords if word in content_lower)
+    return match_count >= 2
+
+# --- 4. STRICTLY FETCH FROM GOOGLE RSS ONLY ---
 def fetch_and_extract_news(service):
-    # Duplicate post check karne ke liye purani history fetch karna
     try:
         posts = service.posts().list(blogId=BLOGGER_ID, maxResults=20, fetchBodies=False).execute()
         existing_titles = [p['title'] for p in posts.get('items', [])]
     except Exception:
         existing_titles = []
 
-    # Sirf aur sirf Google News ke official RSS Feeds ka use hoga
+    # gl=US aur hl=en-US specifically USA audience ko target karte hain
     google_rss_feeds = [
-        "https://news.google.com/rss/search?q=technology+when:24h&hl=en-US&gl=US&ceid=US:en",
-        "https://news.google.com/rss/search?q=technology+when:5d&hl=en-US&gl=US&ceid=US:en"
+        "https://news.google.com/rss/search?q=technology+OR+tech+OR+AI+when:24h&hl=en-US&gl=US&ceid=US:en",
+        "https://news.google.com/rss/search?q=technology+OR+tech+OR+AI+when:5d&hl=en-US&gl=US&ceid=US:en"
     ]
 
     for feed_url in google_rss_feeds:
         timeframe = "24 Hours" if "when:24h" in feed_url else "5 Days"
-        print(f"Searching trending news strictly from Google RSS (Last {timeframe})...")
+        print(f"Searching USA tech news strictly from Google RSS (Last {timeframe})...")
         
         try:
             entries = feedparser.parse(feed_url).entries[:15]
             for entry in entries:
-                # Agar title match nahi karta (Duplicate nahi hai)
                 if not any(is_similar(entry.title, old) for old in existing_titles):
                     news_url = entry.link
                     
                     try:
-                        # Full content aur image nikalne ke liye RSS ki link ko read karna
                         article = Article(news_url)
                         article.download()
                         article.parse()
                         
-                        # Article mein image aur theek-thak content hona zaroori hai
-                        if article.top_image and len(article.text) > 400:
-                            print(f"Found suitable article: {article.title}")
+                        # Check: Image ho, Content bada ho, aur purely TECH related ho
+                        if article.top_image and len(article.text) > 400 and is_tech_related(article.text, article.title):
+                            print(f"Found USA Tech article: {article.title}")
                             return {
                                 "title": article.title if article.title else entry.title,
                                 "content": article.text,
                                 "image_url": article.top_image,
                                 "source_url": news_url
                             }
+                        else:
+                            print(f"Skipped: Not enough tech content or missing image -> {entry.title}")
                     except Exception as e:
                         continue
         except Exception as e:
@@ -101,13 +114,13 @@ def fetch_and_extract_news(service):
 
     return None
 
-# --- 4. POST CONSTRUCTION & PUBLISH ---
+# --- 5. POST CONSTRUCTION & PUBLISH ---
 def post_to_blogger():
     service = get_blogger_service()
     article_data = fetch_and_extract_news(service)
     
     if not article_data:
-        print("No suitable new article found in Google RSS today.")
+        print("No suitable new USA tech article found in Google RSS today.")
         return
 
     final_title = article_data['title'][:70].strip()
@@ -116,7 +129,6 @@ def post_to_blogger():
     
     formatted_content = article_data['content'].replace('\n\n', '</p><p>').replace('\n', '<br>')
 
-    # HTML format jisme Original Source ko completely Credit diya gaya hai
     final_content = f"""
     <div style="font-family: Arial; font-size: 16px; line-height: 1.6;">
         <h1 style="text-align:center;">{final_title}</h1>
@@ -140,7 +152,7 @@ def post_to_blogger():
         print(f"✅ SUCCESS: Posted '{final_title}'")
         
         if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
-            msg = f"Successfully posted to Blogger!\n\nTitle: {final_title}"
+            msg = f"Successfully posted USA Tech News to Blogger!\n\nTitle: {final_title}"
             telegram_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
             requests.post(telegram_url, json={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
             
