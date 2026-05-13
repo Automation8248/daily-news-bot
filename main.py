@@ -53,39 +53,39 @@ def get_smart_labels(topic):
     final_labels = [lbl for lbl in temp_labels if lbl in Existing_Labels_DB]
     return final_labels[:4] if final_labels else ["Technology News"]
 
-# --- 3. FETCH ORIGINAL ARTICLE & IMAGE (WITH 5-DAY FALLBACK LOGIC) ---
+# --- 3. STRICTLY FETCH FROM GOOGLE RSS ONLY ---
 def fetch_and_extract_news(service):
-    # Purane posts ke titles fetch karte hain duplicate rokne ke liye
+    # Duplicate post check karne ke liye purani history fetch karna
     try:
         posts = service.posts().list(blogId=BLOGGER_ID, maxResults=20, fetchBodies=False).execute()
         existing_titles = [p['title'] for p in posts.get('items', [])]
     except Exception:
         existing_titles = []
 
-    # Pehle 24h ki news check karega, agar fail hua to 5 days ki news check karega
-    rss_feeds = [
+    # Sirf aur sirf Google News ke official RSS Feeds ka use hoga
+    google_rss_feeds = [
         "https://news.google.com/rss/search?q=technology+when:24h&hl=en-US&gl=US&ceid=US:en",
         "https://news.google.com/rss/search?q=technology+when:5d&hl=en-US&gl=US&ceid=US:en"
     ]
 
-    for feed_url in rss_feeds:
+    for feed_url in google_rss_feeds:
         timeframe = "24 Hours" if "when:24h" in feed_url else "5 Days"
-        print(f"Searching trending news in the last: {timeframe}...")
+        print(f"Searching trending news strictly from Google RSS (Last {timeframe})...")
         
         try:
             entries = feedparser.parse(feed_url).entries[:15]
             for entry in entries:
-                # Agar title blog mein match nahi karta (Duplicate Check)
+                # Agar title match nahi karta (Duplicate nahi hai)
                 if not any(is_similar(entry.title, old) for old in existing_titles):
                     news_url = entry.link
                     
                     try:
-                        # Article scrape karna
+                        # Full content aur image nikalne ke liye RSS ki link ko read karna
                         article = Article(news_url)
                         article.download()
                         article.parse()
                         
-                        # Valid Image aur accha content length (400 chars se jyada) check karna
+                        # Article mein image aur theek-thak content hona zaroori hai
                         if article.top_image and len(article.text) > 400:
                             print(f"Found suitable article: {article.title}")
                             return {
@@ -95,10 +95,9 @@ def fetch_and_extract_news(service):
                                 "source_url": news_url
                             }
                     except Exception as e:
-                        # Kuch websites extraction block karti hain, isliye error aane par aage badh jayega
                         continue
         except Exception as e:
-            print(f"RSS Fetch failed for {timeframe}: {e}")
+            print(f"Google RSS Fetch failed for {timeframe}: {e}")
 
     return None
 
@@ -108,17 +107,16 @@ def post_to_blogger():
     article_data = fetch_and_extract_news(service)
     
     if not article_data:
-        print("No suitable article found today (checked both 24h and 5-day old news).")
+        print("No suitable new article found in Google RSS today.")
         return
 
     final_title = article_data['title'][:70].strip()
     meta_description = final_title[:150]
     img_style = 'style="max-width:100%; height:auto; border-radius:8px; margin: 25px 0; display:block;"'
     
-    # Content format karna (spaces aur lines ko theek karna)
     formatted_content = article_data['content'].replace('\n\n', '</p><p>').replace('\n', '<br>')
 
-    # Final HTML design (Saath mein source owner ko clear credit dena)
+    # HTML format jisme Original Source ko completely Credit diya gaya hai
     final_content = f"""
     <div style="font-family: Arial; font-size: 16px; line-height: 1.6;">
         <h1 style="text-align:center;">{final_title}</h1>
@@ -141,7 +139,6 @@ def post_to_blogger():
         
         print(f"✅ SUCCESS: Posted '{final_title}'")
         
-        # Post successful hone par direct Telegram alert bhejna
         if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
             msg = f"Successfully posted to Blogger!\n\nTitle: {final_title}"
             telegram_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
