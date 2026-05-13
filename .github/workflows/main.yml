@@ -22,6 +22,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install google-auth google-auth-oauthlib google-api-python-client requests feedparser newspaper3k
           
+      - name: Install libraries
+        run: |
+          python -m pip install --upgrade pip
+          # Yahan aage lxml_html_clean add kiya gaya hai
+          pip install google-auth google-auth-oauthlib google-api-python-client requests feedparser newspaper3k lxml_html_clean 
+          
       - name: Run Auto Poster
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
