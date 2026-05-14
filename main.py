@@ -53,7 +53,7 @@ def get_smart_labels(topic):
     final_labels = [lbl for lbl in temp_labels if lbl in Existing_Labels_DB]
     return final_labels[:4] if final_labels else ["Technology News"]
 
-# --- 3. FETCH ANY TECH NEWS & AI IMAGE GENERATION ---
+# --- 3. FORCEFULLY FETCH ANY TECH BLOG / ARTICLE ---
 def fetch_and_extract_news(service):
     try:
         posts = service.posts().list(blogId=BLOGGER_ID, maxResults=30, fetchBodies=False).execute()
@@ -61,21 +61,22 @@ def fetch_and_extract_news(service):
     except Exception:
         existing_titles = []
 
-    # Config taaki block na ho
+    # Config taaki block na ho (Real browser spoofing)
     user_agent_config = Config()
     user_agent_config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'
     user_agent_config.request_timeout = 15
 
-    # Broad RSS Feeds (USA targetted) - Koi strict trending time limit nahi
+    # FORCEFUL QUERIES: Ab yeh news ke sath-sath explicitly blogs, reviews aur articles bhi dhoondega
     google_rss_feeds = [
-        "https://news.google.com/rss/search?q=technology+OR+AI+when:24h&hl=en-US&gl=US&ceid=US:en",
+        "https://news.google.com/rss/search?q=tech+blog+OR+technology+article+when:24h&hl=en-US&gl=US&ceid=US:en",
+        "https://news.google.com/rss/search?q=software+review+OR+gadget+review&hl=en-US&gl=US&ceid=US:en",
         "https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=en-US&gl=US&ceid=US:en",
-        "https://news.google.com/rss/search?q=gadget+OR+software&hl=en-US&gl=US&ceid=US:en",
-        "https://news.google.com/rss/search?q=technology+OR+tech+OR+AI&hl=en-US&gl=US&ceid=US:en" # Pure fallback (Koi bhi tech news)
+        "https://news.google.com/rss/search?q=technology+OR+AI+when:7d&hl=en-US&gl=US&ceid=US:en",
+        "https://news.google.com/rss/search?q=tech+OR+technology+OR+startup&hl=en-US&gl=US&ceid=US:en" # Ultimate fallback
     ]
 
     for feed_url in google_rss_feeds:
-        print(f"Checking feed: {feed_url.split('?')[0]} ...")
+        print(f"Forcefully checking feed: {urllib.parse.unquote(feed_url.split('q=')[1].split('&')[0]) if 'q=' in feed_url else 'Top Tech Category'} ...")
         
         try:
             entries = feedparser.parse(feed_url).entries
@@ -88,22 +89,21 @@ def fetch_and_extract_news(service):
                         article.download()
                         article.parse()
                         
-                        # LOGIC UPDATE: Ab image hona zaroori nahi, bas content length acchi honi chahiye
-                        if len(article.text) > 300:
+                        # LOGIC UPDATE: Limit ghata kar 200 chars kar di gayi hai taaki chhote tech blogs bhi pick ho jayein
+                        if len(article.text) > 200:
                             final_title = article.title if article.title else entry.title
                             
                             # AI IMAGE GENERATION FALLBACK
                             image_url = article.top_image
                             if not image_url:
-                                print(f"No image found in article! Generating AI image for: {final_title}")
-                                # URL safe prompt banana
-                                safe_prompt = urllib.parse.quote(f"hyper realistic technology news illustration about {final_title}")
-                                # Pollinations AI API
+                                print(f"No image found in blog! Generating AI image for: {final_title[:50]}...")
+                                # Title ko max 100 characters tak rakhenge taaki prompt fail na ho
+                                safe_prompt = urllib.parse.quote(f"hyper realistic technology illustration about {final_title[:100]}")
                                 image_url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=1024&height=576&nologo=true&enhance=true"
                             else:
-                                print("Original image found.")
+                                print("Original image found in the blog.")
 
-                            print(f"Selected Article: {final_title}")
+                            print(f"✅ Selected Tech Article/Blog: {final_title}")
                             return {
                                 "title": final_title,
                                 "content": article.text,
@@ -111,7 +111,7 @@ def fetch_and_extract_news(service):
                                 "source_url": news_url
                             }
                     except Exception as e:
-                        pass
+                        pass # Ignore blockages and move to the next article
         except Exception as e:
             pass
 
@@ -123,22 +123,23 @@ def post_to_blogger():
     article_data = fetch_and_extract_news(service)
     
     if not article_data:
-        print("CRITICAL: Failed to find any suitable article today.")
+        print("CRITICAL: Failed to find any suitable tech blog or article today.")
         if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
             requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", 
-                          json={"chat_id": TELEGRAM_CHAT_ID, "text": "⚠️ Technovexa Bot Failed: No article found today!"})
+                          json={"chat_id": TELEGRAM_CHAT_ID, "text": "⚠️ Technovexa Bot Failed: No tech blog or article found today!"})
         return
 
     final_title = article_data['title'][:70].strip()
     meta_description = final_title[:150]
     img_style = 'style="max-width:100%; height:auto; border-radius:8px; margin: 25px 0; display:block;"'
     
+    # Text Formatting: Lines ko break karke HTML paragraphs mein badalna
     formatted_content = article_data['content'].replace('\n\n', '</p><p>').replace('\n', '<br>')
 
     final_content = f"""
     <div style="font-family: Arial; font-size: 16px; line-height: 1.6;">
         <h1 style="text-align:center;">{final_title}</h1>
-        <img src="{article_data['image_url']}" alt="News Image" {img_style}>
+        <img src="{article_data['image_url']}" alt="Technology Blog Image" {img_style}>
         <p>{formatted_content}</p>
         <br><hr><br>
         <p style="font-size: 14px; color: #555;">
@@ -155,7 +156,7 @@ def post_to_blogger():
             "searchDescription": meta_description
         }, isDraft=False).execute()
         
-        print(f"✅ SUCCESS: Posted '{final_title}'")
+        print(f"✅ SUCCESS: Posted '{final_title}' to Blogger.")
         
         if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
             msg = f"✅ Successfully posted to Technovexa!\n\nTitle: {final_title}"
@@ -163,7 +164,7 @@ def post_to_blogger():
                           json={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
             
     except Exception as e:
-        print(f"❌ Blogger Error: {e}")
+        print(f"❌ Blogger Post Error: {e}")
 
 if __name__ == "__main__":
     post_to_blogger()
