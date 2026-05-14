@@ -7,7 +7,7 @@ from newspaper import Article, Config
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
-# --- 1. CONFIGURATION ---
+# --- 1. CONFIGURATION (100% FREE) ---
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 REFRESH_TOKEN = os.getenv("GOOGLE_REFRESH_TOKEN")
@@ -16,13 +16,18 @@ BLOGGER_ID = os.getenv("BLOGGER_BLOG_ID")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# --- MASTER LABEL LIST ---
+# --- 2. PREMIUM TARGET SITES ---
+TARGET_SITES = [
+    "techcrunch.com", "theverge.com", "wired.com", "arstechnica.com", "venturebeat.com",
+    "technologyreview.com", "openai.com", "ai.googleblog.com", "deepmind.com", "towardsdatascience.com",
+    "freecodecamp.org", "smashingmagazine.com", "css-tricks.com", "hashnode.com", "dev.to",
+    "infoworld.com", "zdnet.com", "krebsonsecurity.com", "thehackernews.com", "blog.cloudflare.com"
+]
+
 Existing_Labels_DB = [
-    "AI Models", "AI News", "AI Updates", 
-    "Cloud Computing", "Digital Innovation", 
-    "Global Tech News", "Google News", "India Tech News", 
-    "OpenAI News", "Smart Technology", "Software Updates", 
-    "Tech Updates", "Technology News"
+    "AI Models", "AI News", "AI Updates", "Cloud Computing", "Digital Innovation", 
+    "Global Tech News", "Google News", "India Tech News", "OpenAI News", 
+    "Smart Technology", "Software Updates", "Tech Updates", "Technology News"
 ]
 
 def get_blogger_service():
@@ -39,21 +44,17 @@ def is_similar(a, b):
 def get_smart_labels(topic):
     topic_lower = topic.lower()
     temp_labels = set()
-    
     if any(k in topic_lower for k in ["tech", "gadget", "device"]): temp_labels.add("Technology News")
     if any(k in topic_lower for k in ["ai", "artificial intelligence"]): temp_labels.update(["AI News", "AI Models"])
     if "google" in topic_lower: temp_labels.add("Google News")
     if "cloud" in topic_lower: temp_labels.add("Cloud Computing")
     if "software" in topic_lower or "update" in topic_lower: temp_labels.add("Software Updates")
     if "openai" in topic_lower or "chatgpt" in topic_lower: temp_labels.add("OpenAI News")
-    if "india" in topic_lower: temp_labels.add("India Tech News")
     if "global" in topic_lower or "world" in topic_lower: temp_labels.add("Global Tech News")
-    if "innovation" in topic_lower or "future" in topic_lower: temp_labels.add("Digital Innovation")
-
     final_labels = [lbl for lbl in temp_labels if lbl in Existing_Labels_DB]
     return final_labels[:4] if final_labels else ["Technology News"]
 
-# --- 3. FORCEFULLY FETCH ANY TECH BLOG (UP TO 14 DAYS) ---
+# --- 3. FETCH EXCLUSIVELY FROM PREMIUM SITES (NO REWRITE) ---
 def fetch_and_extract_news(service):
     try:
         posts = service.posts().list(blogId=BLOGGER_ID, maxResults=30, fetchBodies=False).execute()
@@ -61,30 +62,20 @@ def fetch_and_extract_news(service):
     except Exception:
         existing_titles = []
 
-    # Config taaki block na ho (Real browser spoofing)
     user_agent_config = Config()
     user_agent_config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'
     user_agent_config.request_timeout = 15
 
-    # PRIORITY QUEUE: 24 Hours -> 7 Days -> 14 Days (2 Weeks)
-    # Yeh pehle sabse latest update dhoondega, na milne par 2 hafte pichhe tak jayega
-    google_rss_feeds = [
-        "https://news.google.com/rss/search?q=tech+blog+OR+technology+article+when:24h&hl=en-US&gl=US&ceid=US:en",
-        "https://news.google.com/rss/search?q=software+review+OR+gadget+review+when:7d&hl=en-US&gl=US&ceid=US:en",
-        "https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=en-US&gl=US&ceid=US:en",
-        "https://news.google.com/rss/search?q=technology+OR+AI+when:14d&hl=en-US&gl=US&ceid=US:en", # 2 hafte ka broad search
-        "https://news.google.com/rss/search?q=tech+OR+startup+OR+innovation+when:14d&hl=en-US&gl=US&ceid=US:en" # Ultimate 14-days fallback
-    ]
-
-    for feed_url in google_rss_feeds:
-        # Console me print karne ke liye feed info
-        if "when:24h" in feed_url: timeframe = "Last 24 Hours"
-        elif "when:7d" in feed_url: timeframe = "Last 7 Days"
-        elif "when:14d" in feed_url: timeframe = "Last 14 Days (2 Weeks)"
-        else: timeframe = "Top Current Tech"
-            
-        print(f"Forcefully checking feed: {timeframe} ...")
+    # Target sites ko 5-5 ke groups me baatna taaki URL lamba na ho
+    site_chunks = [TARGET_SITES[i:i + 5] for i in range(0, len(TARGET_SITES), 5)]
+    
+    for chunk in site_chunks:
+        query = " OR ".join([f"site:{site}" for site in chunk])
+        safe_query = urllib.parse.quote(query)
         
+        feed_url = f"https://news.google.com/rss/search?q={safe_query}+when:14d&hl=en-US&gl=US&ceid=US:en"
+        print(f"Checking premium sites for original content...")
+
         try:
             entries = feedparser.parse(feed_url).entries
             for entry in entries:
@@ -96,28 +87,26 @@ def fetch_and_extract_news(service):
                         article.download()
                         article.parse()
                         
-                        # Minimum 200 characters limit (Chhote blogs ke liye)
                         if len(article.text) > 200:
                             final_title = article.title if article.title else entry.title
                             
-                            # AI IMAGE GENERATION FALLBACK
+                            # FREE AI IMAGE GENERATION (Agar original image nahi hai)
                             image_url = article.top_image
                             if not image_url:
-                                print(f"No image found in blog! Generating AI image for: {final_title[:50]}...")
-                                safe_prompt = urllib.parse.quote(f"hyper realistic technology illustration about {final_title[:100]}")
-                                image_url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=1024&height=576&nologo=true&enhance=true"
-                            else:
-                                print("Original image found in the blog.")
+                                print(f"No image found! Generating Free AI image for: {final_title[:50]}...")
+                                safe_img_prompt = urllib.parse.quote(f"hyper realistic technology illustration about {final_title[:100]}")
+                                image_url = f"https://image.pollinations.ai/prompt/{safe_img_prompt}?width=1024&height=576&nologo=true&enhance=true"
 
-                            print(f"✅ Selected Tech Article/Blog: {final_title}")
+                            print(f"✅ Picked Article: {final_title}")
+
                             return {
                                 "title": final_title,
-                                "content": article.text,
+                                "content": article.text, # Original content return kar rahe hain
                                 "image_url": image_url,
                                 "source_url": news_url
                             }
                     except Exception as e:
-                        pass # Ignore blockages and move to the next article
+                        pass 
         except Exception as e:
             pass
 
@@ -129,19 +118,17 @@ def post_to_blogger():
     article_data = fetch_and_extract_news(service)
     
     if not article_data:
-        print("CRITICAL: Failed to find any suitable tech blog or article even after checking 14 days of data.")
-        if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
-            requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", 
-                          json={"chat_id": TELEGRAM_CHAT_ID, "text": "⚠️ Technovexa Bot Failed: No tech blog found in the last 14 days!"})
+        print("CRITICAL: Failed to find any suitable tech blog from the 20 websites.")
         return
 
     final_title = article_data['title'][:70].strip()
     meta_description = final_title[:150]
     img_style = 'style="max-width:100%; height:auto; border-radius:8px; margin: 25px 0; display:block;"'
-    
-    # Text Formatting: Lines ko break karke HTML paragraphs mein badalna
+
+    # Content Formatting: Original text ko cleanly HTML paragraphs me convert karna
     formatted_content = article_data['content'].replace('\n\n', '</p><p>').replace('\n', '<br>')
 
+    # HTML Layout with ORIGINAL Content and Source Credit
     final_content = f"""
     <div style="font-family: Arial; font-size: 16px; line-height: 1.6;">
         <h1 style="text-align:center;">{final_title}</h1>
@@ -162,10 +149,10 @@ def post_to_blogger():
             "searchDescription": meta_description
         }, isDraft=False).execute()
         
-        print(f"✅ SUCCESS: Posted '{final_title}' to Blogger.")
+        print(f"✅ SUCCESS: Posted original article '{final_title}' to Blogger.")
         
         if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
-            msg = f"✅ Successfully posted to Technovexa!\n\nTitle: {final_title}"
+            msg = f"✅ New Post on Technovexa!\n\nTitle: {final_title}"
             requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", 
                           json={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
             
