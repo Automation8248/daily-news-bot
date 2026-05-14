@@ -1,8 +1,9 @@
 import os
 import requests
 import feedparser
+import urllib.parse
 from difflib import SequenceMatcher
-from newspaper import Article
+from newspaper import Article, Config
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
@@ -35,7 +36,6 @@ def get_blogger_service():
 def is_similar(a, b):
     return SequenceMatcher(None, a.lower(), b.lower()).ratio() > 0.6
 
-# --- 2. SMART LABEL SYSTEM ---
 def get_smart_labels(topic):
     topic_lower = topic.lower()
     temp_labels = set()
@@ -53,51 +53,67 @@ def get_smart_labels(topic):
     final_labels = [lbl for lbl in temp_labels if lbl in Existing_Labels_DB]
     return final_labels[:4] if final_labels else ["Technology News"]
 
-# --- 3. STRICTLY USA TECH NEWS FROM GOOGLE RSS ---
+# --- 3. FETCH ANY TECH NEWS & AI IMAGE GENERATION ---
 def fetch_and_extract_news(service):
-    # Duplicate post check karne ke liye purani history fetch karna
     try:
-        posts = service.posts().list(blogId=BLOGGER_ID, maxResults=20, fetchBodies=False).execute()
+        posts = service.posts().list(blogId=BLOGGER_ID, maxResults=30, fetchBodies=False).execute()
         existing_titles = [p['title'] for p in posts.get('items', [])]
     except Exception:
         existing_titles = []
 
-    # Broad Tech Query with strict USA targeting (hl=en-US, gl=US, ceid=US:en)
+    # Config taaki block na ho
+    user_agent_config = Config()
+    user_agent_config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'
+    user_agent_config.request_timeout = 15
+
+    # Broad RSS Feeds (USA targetted) - Koi strict trending time limit nahi
     google_rss_feeds = [
-        "https://news.google.com/rss/search?q=technology+OR+tech+OR+AI+OR+gadget+OR+software+when:24h&hl=en-US&gl=US&ceid=US:en",
-        "https://news.google.com/rss/search?q=technology+OR+tech+OR+AI+OR+gadget+OR+software+when:5d&hl=en-US&gl=US&ceid=US:en"
+        "https://news.google.com/rss/search?q=technology+OR+AI+when:24h&hl=en-US&gl=US&ceid=US:en",
+        "https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=en-US&gl=US&ceid=US:en",
+        "https://news.google.com/rss/search?q=gadget+OR+software&hl=en-US&gl=US&ceid=US:en",
+        "https://news.google.com/rss/search?q=technology+OR+tech+OR+AI&hl=en-US&gl=US&ceid=US:en" # Pure fallback (Koi bhi tech news)
     ]
 
     for feed_url in google_rss_feeds:
-        timeframe = "24 Hours" if "when:24h" in feed_url else "5 Days"
-        print(f"Searching USA tech news strictly from Google RSS (Last {timeframe})...")
+        print(f"Checking feed: {feed_url.split('?')[0]} ...")
         
         try:
-            entries = feedparser.parse(feed_url).entries[:15]
+            entries = feedparser.parse(feed_url).entries
             for entry in entries:
-                # Agar title match nahi karta (Duplicate nahi hai)
                 if not any(is_similar(entry.title, old) for old in existing_titles):
                     news_url = entry.link
                     
                     try:
-                        # Full content aur image nikalne ke liye link ko read karna
-                        article = Article(news_url)
+                        article = Article(news_url, config=user_agent_config)
                         article.download()
                         article.parse()
                         
-                        # Article mein image aur theek-thak content hona zaroori hai
-                        if article.top_image and len(article.text) > 400:
-                            print(f"Found suitable USA tech article: {article.title}")
+                        # LOGIC UPDATE: Ab image hona zaroori nahi, bas content length acchi honi chahiye
+                        if len(article.text) > 300:
+                            final_title = article.title if article.title else entry.title
+                            
+                            # AI IMAGE GENERATION FALLBACK
+                            image_url = article.top_image
+                            if not image_url:
+                                print(f"No image found in article! Generating AI image for: {final_title}")
+                                # URL safe prompt banana
+                                safe_prompt = urllib.parse.quote(f"hyper realistic technology news illustration about {final_title}")
+                                # Pollinations AI API
+                                image_url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=1024&height=576&nologo=true&enhance=true"
+                            else:
+                                print("Original image found.")
+
+                            print(f"Selected Article: {final_title}")
                             return {
-                                "title": article.title if article.title else entry.title,
+                                "title": final_title,
                                 "content": article.text,
-                                "image_url": article.top_image,
+                                "image_url": image_url,
                                 "source_url": news_url
                             }
                     except Exception as e:
-                        continue
+                        pass
         except Exception as e:
-            print(f"Google RSS Fetch failed for {timeframe}: {e}")
+            pass
 
     return None
 
@@ -107,7 +123,10 @@ def post_to_blogger():
     article_data = fetch_and_extract_news(service)
     
     if not article_data:
-        print("No suitable new tech article found in Google RSS today.")
+        print("CRITICAL: Failed to find any suitable article today.")
+        if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
+            requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", 
+                          json={"chat_id": TELEGRAM_CHAT_ID, "text": "⚠️ Technovexa Bot Failed: No article found today!"})
         return
 
     final_title = article_data['title'][:70].strip()
@@ -116,7 +135,6 @@ def post_to_blogger():
     
     formatted_content = article_data['content'].replace('\n\n', '</p><p>').replace('\n', '<br>')
 
-    # HTML format jisme Original Source ko completely Credit diya gaya hai
     final_content = f"""
     <div style="font-family: Arial; font-size: 16px; line-height: 1.6;">
         <h1 style="text-align:center;">{final_title}</h1>
@@ -140,9 +158,9 @@ def post_to_blogger():
         print(f"✅ SUCCESS: Posted '{final_title}'")
         
         if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
-            msg = f"Successfully posted to Blogger!\n\nTitle: {final_title}"
-            telegram_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-            requests.post(telegram_url, json={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
+            msg = f"✅ Successfully posted to Technovexa!\n\nTitle: {final_title}"
+            requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", 
+                          json={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
             
     except Exception as e:
         print(f"❌ Blogger Error: {e}")
